@@ -123,8 +123,38 @@ create policy "profiles: update own row" on profiles
 
 create policy "clinics: members can read their clinic" on clinics
     for select using (id = auth_clinic_id());
-create policy "clinics: any signed-in user can create one" on clinics
-    for insert with check (auth.uid() is not null);
+
+-- Deliberately no direct INSERT policy on clinics: a brand-new user has no
+-- profile row yet, so the SELECT policy above can't see a clinic they just
+-- inserted themselves (INSERT ... RETURNING is itself subject to the
+-- SELECT policy in Postgres RLS). Instead, clinic creation goes through
+-- this SECURITY DEFINER function, which runs as the table owner and so
+-- isn't subject to RLS for its own inserts -- it still sees the calling
+-- user correctly via auth.uid(), it just isn't blocked by the chicken-
+-- and-egg SELECT policy while doing the initial setup.
+create or replace function create_clinic_and_profile(clinic_name text, full_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_clinic_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  insert into clinics (name) values (clinic_name) returning id into new_clinic_id;
+
+  insert into profiles (id, clinic_id, full_name, role)
+  values (auth.uid(), new_clinic_id, full_name, 'admin');
+
+  return new_clinic_id;
+end;
+$$;
+
+grant execute on function create_clinic_and_profile(text, text) to authenticated;
 
 create policy "product_catalog: clinic isolation" on product_catalog
     for all using (clinic_id = auth_clinic_id()) with check (clinic_id = auth_clinic_id());

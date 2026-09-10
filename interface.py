@@ -124,9 +124,12 @@ CLINIC_ID = auth.current_clinic_id()
 
 with st.sidebar:
     profile = auth.get_profile()
+    clinic_name = auth.get_clinic_name()
     st.caption(f"Signed in as **{auth.get_user().email}**")
-    if profile:
-        st.caption(f"Clinic: **{profile.get('full_name') or ''}**".rstrip())
+    if clinic_name:
+        st.caption(f"Clinic: **{clinic_name}**")
+    if profile and profile.get("full_name"):
+        st.caption(f"Staff: {profile['full_name']}")
     st.button("Log Out", on_click=auth.sign_out, use_container_width=True)
 
 st.title("🏷️ tagmate inventory controller")

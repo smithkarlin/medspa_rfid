@@ -70,20 +70,29 @@ def refresh_profile():
 
 def create_clinic(clinic_name: str, full_name: str) -> None:
     """Run once, right after a brand-new user's first login, to create
-    their clinic and an admin profile tied to it."""
+    their clinic and an admin profile tied to it.
+
+    Goes through the create_clinic_and_profile SQL function (SECURITY
+    DEFINER) rather than inserting directly: at this moment the user has
+    no profile row yet, so RLS's own SELECT policy on clinics would
+    otherwise make the freshly-inserted row invisible (INSERT ... RETURNING
+    is itself subject to the SELECT policy) even though the insert itself
+    succeeded -- see schema.sql for the full explanation.
+    """
     client = db.get_client()
-    user = get_user()
-    clinic_res = client.table("clinics").insert({"name": clinic_name}).execute()
-    clinic_id = clinic_res.data[0]["id"]
-    client.table("profiles").insert({
-        "id": user.id,
-        "clinic_id": clinic_id,
-        "full_name": full_name,
-        "role": "admin",
-    }).execute()
+    client.rpc("create_clinic_and_profile", {"clinic_name": clinic_name, "full_name": full_name}).execute()
     refresh_profile()
 
 
 def current_clinic_id():
     profile = get_profile()
     return profile["clinic_id"] if profile else None
+
+
+def get_clinic_name():
+    clinic_id = current_clinic_id()
+    if not clinic_id:
+        return None
+    client = db.get_client()
+    res = client.table("clinics").select("name").eq("id", clinic_id).limit(1).execute()
+    return res.data[0]["name"] if res.data else None
