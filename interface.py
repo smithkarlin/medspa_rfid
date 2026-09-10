@@ -3,6 +3,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+import auth
 import db
 
 # ==========================================================
@@ -70,6 +71,63 @@ st.set_page_config(
     page_icon="🏷️",
     layout="wide"
 )
+
+if not auth.is_logged_in():
+    st.title("🏷️ tagmate")
+    st.caption("RFID & Barcode Inventory for Medspas")
+
+    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
+
+    with login_tab:
+        with st.form("login_form"):
+            login_email = st.text_input("Email", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            if st.form_submit_button("Log In", type="primary", use_container_width=True):
+                try:
+                    auth.sign_in(login_email.strip(), login_password)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+
+    with signup_tab:
+        with st.form("signup_form"):
+            signup_email = st.text_input("Email", key="signup_email")
+            signup_password = st.text_input("Password", type="password", key="signup_password")
+            if st.form_submit_button("Create Account", type="primary", use_container_width=True):
+                try:
+                    result = auth.sign_up(signup_email.strip(), signup_password)
+                    if result.session:
+                        auth.sign_in(signup_email.strip(), signup_password)
+                        st.rerun()
+                    else:
+                        st.success("Account created! Check your email to confirm it, then log in.")
+                except Exception as e:
+                    st.error(f"Sign up failed: {e}")
+
+    st.stop()
+
+if not auth.has_clinic():
+    st.title("🏷️ Welcome to tagmate")
+    st.caption("One more step \u2014 let's set up your clinic.")
+    with st.form("clinic_setup_form"):
+        clinic_name = st.text_input("Medspa / Clinic Name")
+        full_name = st.text_input("Your Name")
+        if st.form_submit_button("Create Clinic", type="primary", use_container_width=True):
+            if clinic_name.strip():
+                auth.create_clinic(clinic_name.strip(), full_name.strip())
+                st.rerun()
+            else:
+                st.error("Please enter a clinic name.")
+    st.stop()
+
+CLINIC_ID = auth.current_clinic_id()
+
+with st.sidebar:
+    profile = auth.get_profile()
+    st.caption(f"Signed in as **{auth.get_user().email}**")
+    if profile:
+        st.caption(f"Clinic: **{profile.get('full_name') or ''}**".rstrip())
+    st.button("Log Out", on_click=auth.sign_out, use_container_width=True)
 
 st.title("🏷️ tagmate inventory controller")
 st.caption("UHF RFID & Barcode Intake System | Pilot Build")
@@ -193,7 +251,7 @@ with tab_intake:
             try:
                 db.insert_tagged_item(
                     clean_epc, selected_sku, prod_name,
-                    expiration_date, lot_number.strip(), target_location
+                    expiration_date, lot_number.strip(), target_location, CLINIC_ID
                 )
 
                 st.balloons()
@@ -295,7 +353,7 @@ with tab_count:
                 })
 
             discrepancy = len(unique_epcs) - expected_count
-            db.insert_daily_audit(audit_location, expected_count, len(unique_epcs), discrepancy, "Clinic Staff")
+            db.insert_daily_audit(audit_location, expected_count, len(unique_epcs), discrepancy, "Clinic Staff", CLINIC_ID)
 
             st.session_state.last_audit_summary = {
                 "results": processed_results,
@@ -383,7 +441,7 @@ with tab_admin:
         if st.button("➕ Add Location"):
             if new_loc_name.strip():
                 try:
-                    db.add_location(new_loc_name.strip())
+                    db.add_location(new_loc_name.strip(), CLINIC_ID)
                     st.success(f"Added **{new_loc_name.strip()}**!")
                     st.rerun()
                 except db.DuplicateError:
@@ -443,7 +501,7 @@ with tab_admin:
             st.success(f"✓ Parsed **{len(df_clean)} product records**.")
 
             if st.button("🚀 Sync to Master Database Catalog", type="primary"):
-                db.sync_catalog(df_clean)
+                db.sync_catalog(df_clean, CLINIC_ID)
 
                 st.balloons()
                 st.success("✅ Master Catalog updated!")

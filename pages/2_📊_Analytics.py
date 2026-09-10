@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
+import auth
 import db
 
 # ==============================================================
@@ -85,6 +86,10 @@ def render_kpi_card(label: str, value: str):
 
 
 def render_analytics_page():
+    if not auth.is_logged_in() or not auth.has_clinic():
+        st.warning("Please log in from the main tagmate page first.")
+        st.stop()
+
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
     st.markdown(

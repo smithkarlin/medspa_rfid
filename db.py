@@ -5,6 +5,16 @@ All Postgres access for interface.py and pages/2_Analytics.py goes through
 this module instead of talking to sqlite3 directly. Connection details are
 read from Streamlit secrets (.streamlit/secrets.toml) if present, otherwise
 from environment variables loaded from a local .env file. See .env.example.
+
+get_client() returns ONE Supabase client per browser session (stored in
+st.session_state), not a single shared/cached client for the whole server
+process. That matters once a user logs in: the client then carries that
+user's auth token, and a shared client would leak one visitor's session
+into another visitor's browser tab. Row-level security on every table
+means reads never need an explicit clinic_id filter here -- Postgres
+already restricts a signed-in user to their own clinic's rows. Inserts
+still take an explicit clinic_id because RLS validates it, it doesn't
+invent it.
 """
 import os
 
@@ -29,16 +39,17 @@ def _get_setting(key: str):
     return os.environ.get(key)
 
 
-@st.cache_resource
 def get_client() -> Client:
-    url = _get_setting("SUPABASE_URL")
-    key = _get_setting("SUPABASE_KEY")
-    if not url or not key:
-        raise RuntimeError(
-            "Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_KEY "
-            "in a .env file or .streamlit/secrets.toml (see .env.example)."
-        )
-    return create_client(url, key)
+    if "_sb_client" not in st.session_state:
+        url = _get_setting("SUPABASE_URL")
+        key = _get_setting("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError(
+                "Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_KEY "
+                "in a .env file or .streamlit/secrets.toml (see .env.example)."
+            )
+        st.session_state["_sb_client"] = create_client(url, key)
+    return st.session_state["_sb_client"]
 
 
 def _is_unique_violation(exc: Exception) -> bool:
@@ -54,9 +65,9 @@ def get_locations_list() -> list:
     return [row["location_name"] for row in res.data]
 
 
-def add_location(name: str) -> None:
+def add_location(name: str, clinic_id: str) -> None:
     try:
-        get_client().table("locations").insert({"location_name": name}).execute()
+        get_client().table("locations").insert({"location_name": name, "clinic_id": clinic_id}).execute()
     except Exception as exc:
         if _is_unique_violation(exc):
             raise DuplicateError(f"Location '{name}' already exists.") from exc
@@ -91,25 +102,27 @@ def lookup_barcode_in_catalog(barcode_or_gtin: str):
     return None
 
 
-def sync_catalog(df_clean: pd.DataFrame) -> None:
-    """Upsert catalog rows by SKU. Uses upsert (not replace) so it never
-    breaks the tagged_inventory -> product_catalog foreign key."""
+def sync_catalog(df_clean: pd.DataFrame, clinic_id: str) -> None:
+    """Upsert catalog rows by (clinic_id, sku). Uses upsert (not replace) so
+    it never breaks the tagged_inventory -> product_catalog foreign key."""
     df_clean = df_clean.copy()
     df_clean["unit_cost"] = df_clean["unit_cost"].astype(float)
     df_clean["reorder_level"] = df_clean["reorder_level"].astype(int)
+    df_clean["clinic_id"] = clinic_id
     records = df_clean.to_dict("records")
     records = [{k: (v.item() if hasattr(v, "item") else v) for k, v in r.items()} for r in records]
     if records:
-        get_client().table("product_catalog").upsert(records, on_conflict="sku").execute()
+        get_client().table("product_catalog").upsert(records, on_conflict="clinic_id,sku").execute()
 
 
 # ---------------------------------------------------------------------
 # Tagged (RFID) inventory
 # ---------------------------------------------------------------------
-def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, location) -> None:
+def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, location, clinic_id) -> None:
     try:
         get_client().table("tagged_inventory").insert({
             "epc": epc,
+            "clinic_id": clinic_id,
             "sku": sku,
             "product_name": product_name,
             "expiration_date": str(expiration_date),
@@ -181,8 +194,9 @@ def get_all_tagged_inventory_df() -> pd.DataFrame:
 # ---------------------------------------------------------------------
 # Daily audits
 # ---------------------------------------------------------------------
-def insert_daily_audit(location, expected_count, scanned_count, discrepancy, audited_by) -> None:
+def insert_daily_audit(location, expected_count, scanned_count, discrepancy, audited_by, clinic_id) -> None:
     get_client().table("daily_audits").insert({
+        "clinic_id": clinic_id,
         "location": location,
         "expected_count": expected_count,
         "scanned_count": scanned_count,
@@ -195,9 +209,11 @@ def insert_daily_audit(location, expected_count, scanned_count, discrepancy, aud
 # Generic fetch helper (used by the Analytics page)
 # ---------------------------------------------------------------------
 def fetch_df(table: str, columns=None) -> pd.DataFrame:
-    """Fetch a whole table as a DataFrame. If `columns` is given, the result
-    is reindexed to guarantee those columns exist even when the table is
-    empty, so callers never hit a KeyError on a fresh, empty database."""
+    """Fetch a whole table as a DataFrame. Row Level Security means this
+    only ever returns the signed-in user's own clinic's rows. If `columns`
+    is given, the result is reindexed to guarantee those columns exist even
+    when the table is empty, so callers never hit a KeyError on a fresh,
+    empty clinic."""
     res = get_client().table(table).select("*").execute()
     df = pd.DataFrame(res.data)
     if columns is not None:
