@@ -1,0 +1,25 @@
+import os
+
+# Directory to save sticker metadata
+OUTPUT_DIR = "test_stickers"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Product catalog data matching MDware export
+products = [
+    {"sku": "BTX-100U", "name": "Botox Cosmetic 100U", "gtin": "00300234567890", "exp": "261231", "lot": "LOT998822"},
+    {"sku": "DSP-300U", "name": "Dysport 300U", "gtin": "00300456789012", "exp": "270630", "lot": "AB7761"},
+    {"sku": "JUV-ULTRA", "name": "Juvederm Ultra XC", "gtin": "00300987654321", "exp": "260815", "lot": "JUV1234"},
+    {"sku": "JUV-VOLUMA", "name": "Juvederm Voluma XC", "gtin": "00300987654322", "exp": "261020", "lot": "VOL5544"},
+    {"sku": "RST-LYFT", "name": "Restylane Lyft 1.0ml", "gtin": "00732154987654", "exp": "270115", "lot": "RST9021"}
+]
+
+print("--- COPY & PASTE RAW GS1 STRINGS FOR YOUR APP TEST ---")
+for prod in products:
+    # Build standard GS1 DataMatrix raw string payload
+    gs1_payload = f"01{prod['gtin']}17{prod['exp']}10{prod['lot']}"
+    
+    print(f"\n📦 {prod['name']} ({prod['sku']})")
+    print(f"   GTIN:    {prod['gtin']}")
+    print(f"   EXP:     {prod['exp']}")
+    print(f"   LOT:     {prod['lot']}")
+    print(f"   👉 GS1 Payload String: {gs1_payload}")

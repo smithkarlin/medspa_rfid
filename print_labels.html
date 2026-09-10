@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+  .label { border: 1px dashed #ccc; padding: 10px; border-radius: 4px; text-align: center; }
+  .label img { width: 100px; height: 100px; }
+  .info { font-size: 11px; margin-top: 5px; font-weight: bold; }
+</style>
+</head>
+<body>
+<h2>Printable Test Labels (Scan with 2D Reader)</h2>
+<div class="grid">
+
+  <div class="label">
+    <img src="https://barcode.tec-it.com/barcode.ashx?data=01003002345678901726123110LOT998822&code=GS1DataMatrix&translate-esc=true" alt="Barcode">
+    <div class="info">Botox 100U</div>
+    <div style="font-size: 9px;">LOT: LOT998822 | EXP: 261231</div>
+  </div>
+
+  <div class="label">
+    <img src="https://barcode.tec-it.com/barcode.ashx?data=01003004567890121727063010AB7761&code=GS1DataMatrix&translate-esc=true" alt="Barcode">
+    <div class="info">Dysport 300U</div>
+    <div style="font-size: 9px;">LOT: AB7761 | EXP: 270630</div>
+  </div>
+
+  <div class="label">
+    <img src="https://barcode.tec-it.com/barcode.ashx?data=01003009876543211726081510JUV1234&code=GS1DataMatrix&translate-esc=true" alt="Barcode">
+    <div class="info">Juvederm Ultra</div>
+    <div style="font-size: 9px;">LOT: JUV1234 | EXP: 260815</div>
+  </div>
+
+  <div class="label">
+    <img src="https://barcode.tec-it.com/barcode.ashx?data=01003009876543221726102010VOL5544&code=GS1DataMatrix&translate-esc=true" alt="Barcode">
+    <div class="info">Juvederm Voluma</div>
+    <div style="font-size: 9px;">LOT: VOL5544 | EXP: 261020</div>
+  </div>
+
+  <div class="label">
+    <img src="https://barcode.tec-it.com/barcode.ashx?data=01007321549876541727011510RST9021&code=GS1DataMatrix&translate-esc=true" alt="Barcode">
+    <div class="info">Restylane Lyft</div>
+    <div style="font-size: 9px;">LOT: RST9021 | EXP: 270115</div>
+  </div>
+
+</div>
+</body>
+</html>

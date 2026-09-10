@@ -1,1 +1,8 @@
 medspa.db
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
