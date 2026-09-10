@@ -3,3 +3,12 @@ pandas>=2.0
 supabase>=2.4
 plotly>=5.20
 python-dotenv>=1.0
+
+# Pinned explicitly: pyjwt[crypto] (pulled in by supabase-auth) depends on
+# `cryptography`, and letting pip resolve that to whatever is newest can land
+# on a version with no prebuilt wheel yet for some platforms -- pip then
+# tries to compile it from source, which needs a Rust toolchain and OpenSSL
+# dev headers most machines don't have. Pinning to a long-established
+# release keeps pip on a version with prebuilt wheels for every common
+# platform (mac, including Intel and Apple Silicon; Linux; Windows).
+cryptography==43.0.3
