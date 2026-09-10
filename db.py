@@ -1,7 +1,7 @@
 """
 Supabase-backed data access layer for the Tagmate RFID inventory app.
 
-All Postgres access for interface.py and pages/2_Analytics.py goes through
+All Postgres access for interface.py and every page in pages/ goes through
 this module instead of talking to sqlite3 directly. Connection details are
 read from Streamlit secrets (.streamlit/secrets.toml) if present, otherwise
 from environment variables loaded from a local .env file. See .env.example.

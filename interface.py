@@ -75,15 +75,17 @@ if not auth.has_clinic():
 PAGE_SPECS = [
     ("intake", "pages/1_Express_Intake.py", "Express Intake",
      "Scan a box barcode, then an RFID tag, to commission new stock."),
-    ("count", "pages/2_Daily_Count.py", "Daily Count",
+    ("checkout", "pages/2_Checkout.py", "Checkout",
+     "Scan an RFID tag to mark a product used and remove it from active stock."),
+    ("count", "pages/3_Daily_Count.py", "Daily Count",
      "Walk a room with a handheld scanner to reconcile inventory."),
-    ("inventory", "pages/3_Active_Inventory.py", "Active Inventory",
+    ("inventory", "pages/4_Active_Inventory.py", "Active Inventory",
      "See everything currently tagged and in stock."),
-    ("settings", "pages/4_Settings.py", "Settings",
+    ("settings", "pages/5_Settings.py", "Settings",
      "Manage storage locations and sync your product catalog."),
-    ("analytics", "pages/5_Analytics.py", "Analytics",
+    ("analytics", "pages/6_Analytics.py", "Analytics",
      "Dashboards on stock levels, usage, and expiration risk."),
-    ("vendors", "pages/6_Vendors.py", "Vendors",
+    ("vendors", "pages/7_Vendors.py", "Vendors",
      "Manage suppliers and see which products come from where."),
 ]
 
