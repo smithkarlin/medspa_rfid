@@ -36,10 +36,24 @@ drop table if exists tagged_inventory cascade;
 drop table if exists barcode_inventory cascade;
 drop table if exists locations cascade;
 drop table if exists product_catalog cascade;
+drop table if exists vendors cascade;
 drop table if exists inventory cascade;
 drop view if exists expiration_risk cascade;
 
 -- ---- Per-clinic data ----
+
+create table vendors (
+    id uuid primary key default gen_random_uuid(),
+    clinic_id uuid not null references clinics(id) on delete cascade,
+    vendor_name text not null,
+    contact_name text,
+    contact_email text,
+    contact_phone text,
+    lead_time_days integer,
+    notes text,
+    created_at timestamptz default now(),
+    unique (clinic_id, vendor_name)
+);
 
 create table product_catalog (
     id uuid primary key default gen_random_uuid(),
@@ -49,6 +63,7 @@ create table product_catalog (
     product_name text not null,
     unit_cost numeric default 0.0,
     reorder_level integer default 5,
+    vendor_id uuid references vendors(id) on delete set null,
     unique (clinic_id, sku)
 );
 
@@ -105,6 +120,7 @@ create table barcode_inventory (
 
 alter table clinics enable row level security;
 alter table profiles enable row level security;
+alter table vendors enable row level security;
 alter table product_catalog enable row level security;
 alter table locations enable row level security;
 alter table tagged_inventory enable row level security;
@@ -159,6 +175,9 @@ end;
 $$;
 
 grant execute on function create_clinic_and_profile(text, text) to authenticated;
+
+create policy "vendors: clinic isolation" on vendors
+    for all using (clinic_id = auth_clinic_id()) with check (clinic_id = auth_clinic_id());
 
 create policy "product_catalog: clinic isolation" on product_catalog
     for all using (clinic_id = auth_clinic_id()) with check (clinic_id = auth_clinic_id());

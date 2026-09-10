@@ -206,7 +206,47 @@ def insert_daily_audit(location, expected_count, scanned_count, discrepancy, aud
 
 
 # ---------------------------------------------------------------------
-# Generic fetch helper (used by the Analytics page)
+# Vendors
+# ---------------------------------------------------------------------
+def get_vendors_df() -> pd.DataFrame:
+    res = get_client().table("vendors").select("*").order("vendor_name").execute()
+    return pd.DataFrame(res.data)
+
+
+def add_vendor(vendor_name, clinic_id, contact_name="", contact_email="",
+                contact_phone="", lead_time_days=None, notes="") -> None:
+    try:
+        get_client().table("vendors").insert({
+            "clinic_id": clinic_id,
+            "vendor_name": vendor_name,
+            "contact_name": contact_name or None,
+            "contact_email": contact_email or None,
+            "contact_phone": contact_phone or None,
+            "lead_time_days": lead_time_days,
+            "notes": notes or None,
+        }).execute()
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            raise DuplicateError(f"Vendor '{vendor_name}' already exists.") from exc
+        raise
+
+
+def delete_vendor(vendor_id: str) -> None:
+    get_client().table("vendors").delete().eq("id", vendor_id).execute()
+
+
+def assign_vendor_to_skus(vendor_id, skus: list) -> None:
+    if skus:
+        get_client().table("product_catalog").update({"vendor_id": vendor_id}).in_("sku", skus).execute()
+
+
+def unassign_vendor_from_skus(skus: list) -> None:
+    if skus:
+        get_client().table("product_catalog").update({"vendor_id": None}).in_("sku", skus).execute()
+
+
+# ---------------------------------------------------------------------
+# Generic fetch helper (used by the Analytics and Vendors pages)
 # ---------------------------------------------------------------------
 def fetch_df(table: str, columns=None) -> pd.DataFrame:
     """Fetch a whole table as a DataFrame. Row Level Security means this

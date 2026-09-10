@@ -5,6 +5,7 @@ import streamlit as st
 
 import auth
 import db
+import ui
 
 # ==========================================================
 # CALLBACK FUNCTIONS & PARSERS
@@ -72,9 +73,10 @@ st.set_page_config(
     layout="wide"
 )
 
+ui.inject_base_css()
+
 if not auth.is_logged_in():
-    st.title("🏷️ tagmate")
-    st.caption("RFID & Barcode Inventory for Medspas")
+    ui.render_page_header("🏷️ tagmate", "RFID & Barcode Inventory for Medspas")
 
     login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
 
@@ -107,8 +109,7 @@ if not auth.is_logged_in():
     st.stop()
 
 if not auth.has_clinic():
-    st.title("🏷️ Welcome to tagmate")
-    st.caption("One more step \u2014 let's set up your clinic.")
+    ui.render_page_header("🏷️ Welcome to tagmate", "One more step \u2014 let's set up your clinic.")
     with st.form("clinic_setup_form"):
         clinic_name = st.text_input("Medspa / Clinic Name")
         full_name = st.text_input("Your Name")
@@ -132,8 +133,7 @@ with st.sidebar:
         st.caption(f"Staff: {profile['full_name']}")
     st.button("Log Out", on_click=auth.sign_out, use_container_width=True)
 
-st.title("🏷️ tagmate inventory controller")
-st.caption("UHF RFID & Barcode Intake System | Pilot Build")
+ui.render_page_header("🏷️ tagmate inventory controller", "UHF RFID & Barcode Intake System | Pilot Build")
 
 tab_intake, tab_count, tab_inventory, tab_admin = st.tabs([
     "📥 Express Intake",

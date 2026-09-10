@@ -4,85 +4,23 @@ import plotly.graph_objects as go
 
 import auth
 import db
+import ui
 
 # ==============================================================
 # PAGE CONFIG
 # ==============================================================
-st.set_page_config(page_title="tagmate Analytics", page_icon="◆", layout="wide")
+st.set_page_config(page_title="tagmate Analytics", page_icon="📊", layout="wide")
 
-# ==============================================================
-# DESIGN TOKENS
-# ==============================================================
-BG = "#F4F6FA"
-CARD = "#FFFFFF"
-INK = "#2B3445"
-MUTED = "#8A93A6"
-BORDER = "#EDF0F5"
+# Design tokens now live in ui.py and are shared with every other page,
+# so the whole app reads as one consistent platform.
+INK = ui.INK
+MUTED = ui.MUTED
+BORDER = ui.BORDER
+BLUE_1 = ui.BLUE_1
+BLUE_2 = ui.BLUE_2
+RED_EXPIRING = ui.RED_EXPIRING
 
-BLUE_1 = "#5B9BF7"
-BLUE_2 = "#3B6FE0"
-RED_EXPIRING = "#F0664E"
-
-CUSTOM_CSS = f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
-
-html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {INK}; }}
-.stApp {{ background-color: {BG}; }}
-
-/* Suppress accidental empty element spaces */
-div[data-testid="stElementContainer"]:empty {{ display: none !important; }}
-
-.tm-title {{ font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 2.1rem; color: {INK}; margin: 0; }}
-.tm-caption {{ color: {MUTED}; font-size: 0.95rem; margin-top: 0.15rem; margin-bottom: 1.5rem; }}
-
-/* ---- Gradient KPI cards ---- */
-.tm-kpi-card {{
-    position: relative;
-    overflow: hidden;
-    border-radius: 16px;
-    padding: 1.2rem 1.4rem;
-    background: linear-gradient(135deg, {BLUE_1} 0%, {BLUE_2} 100%);
-    box-shadow: 0 8px 20px rgba(59,111,224,0.20);
-    min-height: 110px;
-    margin-bottom: 0.5rem;
-}}
-.tm-kpi-label {{
-    font-family: 'Inter', sans-serif; 
-    font-weight: 600; 
-    font-size: 0.72rem;
-    letter-spacing: 0.08em; 
-    text-transform: uppercase; 
-    color: rgba(255,255,255,0.85);
-    margin-bottom: 0.4rem;
-}}
-.tm-kpi-value {{ 
-    font-family: 'Poppins', sans-serif; 
-    font-weight: 700; 
-    font-size: 1.8rem; 
-    color: #FFFFFF; 
-    line-height: 1.1;
-}}
-.tm-kpi-wave {{ position: absolute; left: 0; right: 0; bottom: -2px; z-index: 1; opacity: 0.45; pointer-events: none; }}
-
-.tm-panel-title {{ font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 1.15rem; color: {INK}; margin: 0 0 0.5rem 0; }}
-
-div[data-baseweb="select"] > div {{ border-radius: 10px !important; border-color: {BORDER} !important; }}
-.stDataFrame {{ border: 1px solid {BORDER}; border-radius: 12px; overflow: hidden; }}
-</style>
-"""
-
-WAVE_SVG = """
-<svg class="tm-kpi-wave" viewBox="0 0 300 60" preserveAspectRatio="none" width="100%" height="45">
-  <path d="M0,35 C25,10 50,55 75,32 C100,10 125,50 150,30 C175,12 200,48 225,28 C250,12 275,45 300,25"
-        fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-</svg>
-"""
-
-
-def render_kpi_card(label: str, value: str):
-    html = f"""<div class="tm-kpi-card"><div class="tm-kpi-label">{label}</div><div class="tm-kpi-value">{value}</div>{WAVE_SVG}</div>"""
-    st.markdown(html, unsafe_allow_html=True)
+render_kpi_card = ui.render_kpi_card
 
 
 def render_analytics_page():
@@ -90,15 +28,8 @@ def render_analytics_page():
         st.warning("Please log in from the main tagmate page first.")
         st.stop()
 
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-
-    st.markdown(
-        """
-        <h1 class="tm-title">Dashboard</h1>
-        <div class="tm-caption">Real-time clinical visibility, site filtering, and asset tracking powered by tagmate.</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    ui.inject_base_css()
+    ui.render_page_header("📊 Dashboard", "Real-time clinical visibility, site filtering, and asset tracking powered by tagmate.")
 
     try:
         # ==========================================================
