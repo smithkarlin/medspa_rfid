@@ -29,11 +29,15 @@ create table if not exists profiles (
 );
 
 -- Drop old single-tenant tables from the first migration, if present.
-drop table if exists daily_audits;
-drop table if exists tagged_inventory;
-drop table if exists barcode_inventory;
-drop table if exists locations;
-drop table if exists product_catalog;
+-- CASCADE also removes anything built on top of them (e.g. an "inventory"
+-- table or "expiration_risk" view some earlier exploration left behind).
+drop table if exists daily_audits cascade;
+drop table if exists tagged_inventory cascade;
+drop table if exists barcode_inventory cascade;
+drop table if exists locations cascade;
+drop table if exists product_catalog cascade;
+drop table if exists inventory cascade;
+drop view if exists expiration_risk cascade;
 
 -- ---- Per-clinic data ----
 
