@@ -16,9 +16,11 @@ already restricts a signed-in user to their own clinic's rows. Inserts
 still take an explicit clinic_id because RLS validates it, it doesn't
 invent it.
 """
+import functools
 import os
 from datetime import datetime, timezone
 
+import httpx
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -58,14 +60,36 @@ def _is_unique_violation(exc: Exception) -> bool:
     return code == "23505" or "duplicate key value" in str(exc).lower()
 
 
+# Supabase's connection can occasionally get dropped by the server on a
+# long-idle browser session -- the per-session client (see get_client()
+# above) is kept around for the whole session, and if it sits idle long
+# enough, Supabase's edge network can close the pooled HTTP connection
+# without the client knowing, so the next request fails with something
+# like httpx.RemoteProtocolError: Server disconnected. This retries the
+# call once, discarding the cached client first so the retry opens a
+# brand-new connection, before letting the error surface for real.
+def with_retry(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadError,
+                httpx.WriteError, httpx.ConnectTimeout) as exc:
+            st.session_state.pop("_sb_client", None)
+            return fn(*args, **kwargs)
+    return wrapper
+
+
 # ---------------------------------------------------------------------
 # Locations
 # ---------------------------------------------------------------------
+@with_retry
 def get_locations_list() -> list:
     res = get_client().table("locations").select("location_name").order("location_name").execute()
     return [row["location_name"] for row in res.data]
 
 
+@with_retry
 def add_location(name: str, clinic_id: str) -> None:
     try:
         get_client().table("locations").insert({"location_name": name, "clinic_id": clinic_id}).execute()
@@ -75,6 +99,7 @@ def add_location(name: str, clinic_id: str) -> None:
         raise
 
 
+@with_retry
 def delete_location(name: str) -> None:
     get_client().table("locations").delete().eq("location_name", name).execute()
 
@@ -82,11 +107,13 @@ def delete_location(name: str) -> None:
 # ---------------------------------------------------------------------
 # Product catalog
 # ---------------------------------------------------------------------
+@with_retry
 def get_catalog_options() -> dict:
     res = get_client().table("product_catalog").select("sku, product_name").execute()
     return {row["sku"]: row["product_name"] for row in res.data}
 
 
+@with_retry
 def lookup_barcode_in_catalog(barcode_or_gtin: str):
     value = barcode_or_gtin.strip()
     res = (
@@ -103,6 +130,7 @@ def lookup_barcode_in_catalog(barcode_or_gtin: str):
     return None
 
 
+@with_retry
 def sync_catalog(df_clean: pd.DataFrame, clinic_id: str) -> None:
     """Upsert catalog rows by (clinic_id, sku). Uses upsert (not replace) so
     it never breaks the tagged_inventory -> product_catalog foreign key."""
@@ -119,6 +147,7 @@ def sync_catalog(df_clean: pd.DataFrame, clinic_id: str) -> None:
 # ---------------------------------------------------------------------
 # Tagged (RFID) inventory
 # ---------------------------------------------------------------------
+@with_retry
 def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, location, clinic_id,
                         status="In Stock", used_at=None) -> None:
     try:
@@ -141,6 +170,7 @@ def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, loca
         raise
 
 
+@with_retry
 def mark_item_used(epc: str) -> None:
     """Marks a tagged (RFID) item as used/consumed. This is the event that
     powers the reorder-recommendation usage rate on the Vendors page."""
@@ -150,6 +180,7 @@ def mark_item_used(epc: str) -> None:
     }).eq("epc", epc).execute()
 
 
+@with_retry
 def get_expected_count(location: str) -> int:
     res = (
         get_client()
@@ -162,6 +193,7 @@ def get_expected_count(location: str) -> int:
     return res.count or 0
 
 
+@with_retry
 def get_tagged_item(epc: str):
     res = (
         get_client()
@@ -174,6 +206,7 @@ def get_tagged_item(epc: str):
     return res.data[0] if res.data else None
 
 
+@with_retry
 def update_tagged_location(epc: str, new_location: str, scanned_at: str) -> None:
     get_client().table("tagged_inventory").update({
         "location": new_location,
@@ -182,6 +215,7 @@ def update_tagged_location(epc: str, new_location: str, scanned_at: str) -> None
     }).eq("epc", epc).execute()
 
 
+@with_retry
 def get_all_tagged_inventory_df() -> pd.DataFrame:
     res = (
         get_client()
@@ -210,6 +244,7 @@ def get_all_tagged_inventory_df() -> pd.DataFrame:
 # ---------------------------------------------------------------------
 # Daily audits
 # ---------------------------------------------------------------------
+@with_retry
 def insert_daily_audit(location, expected_count, scanned_count, discrepancy, audited_by, clinic_id) -> None:
     get_client().table("daily_audits").insert({
         "clinic_id": clinic_id,
@@ -224,11 +259,13 @@ def insert_daily_audit(location, expected_count, scanned_count, discrepancy, aud
 # ---------------------------------------------------------------------
 # Vendors
 # ---------------------------------------------------------------------
+@with_retry
 def get_vendors_df() -> pd.DataFrame:
     res = get_client().table("vendors").select("*").order("vendor_name").execute()
     return pd.DataFrame(res.data)
 
 
+@with_retry
 def add_vendor(vendor_name, clinic_id, contact_name="", contact_email="",
                 contact_phone="", lead_time_days=None, notes="") -> None:
     try:
@@ -247,15 +284,18 @@ def add_vendor(vendor_name, clinic_id, contact_name="", contact_email="",
         raise
 
 
+@with_retry
 def delete_vendor(vendor_id: str) -> None:
     get_client().table("vendors").delete().eq("id", vendor_id).execute()
 
 
+@with_retry
 def assign_vendor_to_skus(vendor_id, skus: list) -> None:
     if skus:
         get_client().table("product_catalog").update({"vendor_id": vendor_id}).in_("sku", skus).execute()
 
 
+@with_retry
 def unassign_vendor_from_skus(skus: list) -> None:
     if skus:
         get_client().table("product_catalog").update({"vendor_id": None}).in_("sku", skus).execute()
@@ -264,6 +304,7 @@ def unassign_vendor_from_skus(skus: list) -> None:
 # ---------------------------------------------------------------------
 # Generic fetch helper (used by the Analytics and Vendors pages)
 # ---------------------------------------------------------------------
+@with_retry
 def fetch_df(table: str, columns=None) -> pd.DataFrame:
     """Fetch a whole table as a DataFrame. Row Level Security means this
     only ever returns the signed-in user's own clinic's rows. If `columns`
@@ -343,6 +384,7 @@ def get_reorder_recommendations() -> pd.DataFrame:
 # ---------------------------------------------------------------------
 # Barcode (non-RFID) inventory
 # ---------------------------------------------------------------------
+@with_retry
 def insert_barcode_item(barcode, product_name, sku, expiration_date, unit_cost,
                           location, clinic_id, status="In Stock") -> None:
     get_client().table("barcode_inventory").insert({

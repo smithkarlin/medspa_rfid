@@ -10,6 +10,7 @@ staff using it at once.
 import streamlit as st
 
 import db
+from db import with_retry
 
 
 def get_user():
@@ -28,11 +29,13 @@ def has_clinic() -> bool:
     return get_profile() is not None
 
 
+@with_retry
 def sign_up(email: str, password: str):
     client = db.get_client()
     return client.auth.sign_up({"email": email, "password": password})
 
 
+@with_retry
 def sign_in(email: str, password: str):
     client = db.get_client()
     result = client.auth.sign_in_with_password({"email": email, "password": password})
@@ -55,6 +58,7 @@ def sign_out():
         st.session_state.pop(key, None)
 
 
+@with_retry
 def _load_profile():
     user = get_user()
     if not user:
@@ -68,6 +72,7 @@ def refresh_profile():
     st.session_state["sb_profile"] = _load_profile()
 
 
+@with_retry
 def create_clinic(clinic_name: str, full_name: str) -> None:
     """Run once, right after a brand-new user's first login, to create
     their clinic and an admin profile tied to it.
@@ -89,6 +94,7 @@ def current_clinic_id():
     return profile["clinic_id"] if profile else None
 
 
+@with_retry
 def get_clinic_name():
     clinic_id = current_clinic_id()
     if not clinic_id:
