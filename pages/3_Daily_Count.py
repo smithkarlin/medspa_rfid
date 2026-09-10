@@ -9,7 +9,7 @@ import ui
 
 ui.inject_base_css()
 ui.require_clinic()
-ui.render_sidebar_account()
+ui.render_top_bar()
 
 CLINIC_ID = auth.current_clinic_id()
 

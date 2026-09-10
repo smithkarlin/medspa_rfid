@@ -1,13 +1,15 @@
 """
 Shared design system for the Tagmate app: colors, fonts, and reusable CSS
-components (page headers, KPI cards, status badges) used across
-interface.py and every page in pages/, so the app reads as one
-consistent, professional platform instead of separately-styled screens.
+components (page headers, KPI cards, status badges, the top account bar)
+used across interface.py and every page in pages/, so the app reads as
+one consistent, professional platform instead of separately-styled
+screens.
 
 The dark sidebar / light workspace split itself is set globally in
 .streamlit/config.toml (Streamlit's own theme engine); this module adds
 the finer-grained pieces Streamlit's theme config doesn't cover -- KPI
-cards, section titles, status pills.
+cards, section titles, status pills, the sidebar's active-page pill, and
+the top-right account bar.
 """
 import streamlit as st
 
@@ -25,29 +27,51 @@ RED_EXPIRING = "#F0664E"
 
 BASE_CSS = f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
 html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
 
 .tm-page-title {{
-    font-family: 'Poppins', sans-serif;
-    font-weight: 600;
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 700;
     font-size: 2rem;
     color: {INK};
     margin: 0;
 }}
 .tm-page-caption {{
-    color: {MUTED};
+    color: {BLUE_2};
+    font-weight: 500;
     font-size: 0.95rem;
     margin-top: 0.15rem;
     margin-bottom: 1.5rem;
 }}
 .tm-panel-title {{
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Baloo 2', sans-serif;
     font-weight: 600;
     font-size: 1.1rem;
     color: {INK};
     margin: 0 0 0.6rem 0;
+}}
+
+/* ---- Brand wordmark, echoing the logo's two-tone treatment ---- */
+.tm-brand {{
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    padding-top: 0.35rem;
+    line-height: 1;
+}}
+.tm-brand-main {{
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: {INK};
+}}
+.tm-brand-sub {{
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    color: {BLUE_2};
 }}
 
 /* ---- Gradient KPI cards, shared across Analytics / Vendors / Inventory ---- */
@@ -71,7 +95,7 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
     margin-bottom: 0.4rem;
 }}
 .tm-kpi-value {{
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Baloo 2', sans-serif;
     font-weight: 700;
     font-size: 1.7rem;
     color: #FFFFFF;
@@ -98,8 +122,34 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
 div[data-baseweb="select"] > div {{ border-radius: 10px !important; border-color: {BORDER} !important; }}
 div[data-testid="stForm"] {{ border: 1px solid {BORDER}; border-radius: 12px; padding: 1rem 1.2rem; }}
 
-/* Sidebar: a little breathing room above the nav links */
+/* ---- Sidebar: logo + icon-led nav, active page as a rounded blue pill ---- */
+[data-testid="stSidebarNav"] {{ padding-top: 0.5rem; }}
 [data-testid="stSidebarNav"] ul {{ padding-top: 0.25rem; }}
+[data-testid="stSidebarNav"] a {{
+    border-radius: 10px;
+    margin: 2px 0.9rem;
+    padding: 0.55rem 0.9rem;
+    font-weight: 500;
+    transition: background 0.15s ease;
+}}
+[data-testid="stSidebarNav"] a:hover {{
+    background: rgba(255,255,255,0.07);
+}}
+[data-testid="stSidebarNav"] a[aria-current="page"] {{
+    background: linear-gradient(135deg, {BLUE_1} 0%, {BLUE_2} 100%);
+    box-shadow: 0 4px 14px rgba(59,111,224,0.35);
+}}
+[data-testid="stSidebarNav"] a[aria-current="page"] span {{
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}}
+
+/* ---- Top account bar icon buttons (rendered inside a keyed container) ---- */
+.st-key-tm_topbar_icons button {{
+    border-radius: 999px !important;
+    min-width: 2.4rem;
+    padding: 0.35rem 0.6rem !important;
+}}
 </style>
 """
 
@@ -137,16 +187,60 @@ def require_clinic() -> None:
         st.stop()
 
 
-def render_sidebar_account() -> None:
-    """Signed-in-as / clinic / staff / log-out block, shown in the
-    sidebar on every page."""
+def render_top_bar() -> None:
+    """Top-of-page account bar: brand wordmark on the left, and on the
+    right a clinic switcher, notifications, a settings shortcut, help,
+    and an account menu (signed-in email, staff name, Log Out) -- all as
+    popovers so no extra page navigation is needed to see them."""
     import auth
-    with st.sidebar:
-        profile = auth.get_profile()
-        clinic_name = auth.get_clinic_name()
-        st.caption(f"Signed in as **{auth.get_user().email}**")
-        if clinic_name:
-            st.caption(f"Clinic: **{clinic_name}**")
-        if profile and profile.get("full_name"):
-            st.caption(f"Staff: {profile['full_name']}")
-        st.button("Log Out", on_click=auth.sign_out, use_container_width=True)
+
+    left, right = st.columns([3, 4])
+
+    with left:
+        st.markdown(
+            '<div class="tm-brand"><span class="tm-brand-main">Tagmate</span>'
+            '<span class="tm-brand-sub">Analytics</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    with right:
+        clinic_col, icons_col = st.columns([2, 3])
+
+        with clinic_col:
+            clinic_name = auth.get_clinic_name() or "Clinic"
+            with st.popover(f"{clinic_name}  ▾", use_container_width=True):
+                st.caption("Clinic")
+                st.write(f"**{clinic_name}**")
+                st.page_link("pages/5_Settings.py", label="Manage Settings", icon=":material/settings:")
+
+        with icons_col:
+            with st.container(key="tm_topbar_icons"):
+                b1, b2, b3, b4 = st.columns(4)
+                with b1:
+                    with st.popover("🔔"):
+                        st.caption("Notifications")
+                        st.write("No new notifications yet.")
+                with b2:
+                    with st.popover("⚙️"):
+                        st.caption("Settings")
+                        st.page_link("pages/5_Settings.py", label="Open Settings", icon=":material/settings:")
+                with b3:
+                    with st.popover("❓"):
+                        st.caption("Help")
+                        st.write(
+                            "Set up locations and sync your catalog on the **Settings** page. "
+                            "Commission stock on **Express Intake**, and scan items out on **Checkout**."
+                        )
+                with b4:
+                    user = auth.get_user()
+                    profile = auth.get_profile()
+                    initial = (user.email[0].upper() if user and user.email else "?")
+                    with st.popover(initial):
+                        if user:
+                            st.caption("Signed in as")
+                            st.write(f"**{user.email}**")
+                        if profile and profile.get("full_name"):
+                            st.caption(f"Staff: {profile['full_name']}")
+                        st.button("Log Out", on_click=auth.sign_out, use_container_width=True, key="topbar_logout")
+
+    st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)

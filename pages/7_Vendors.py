@@ -11,7 +11,7 @@ import ui
 
 ui.inject_base_css()
 ui.require_clinic()
-ui.render_sidebar_account()
+ui.render_top_bar()
 ui.render_page_header("🏭 Vendor Management", "Track suppliers, contacts, and lead times, and see which products come from where.")
 
 CLINIC_ID = auth.current_clinic_id()

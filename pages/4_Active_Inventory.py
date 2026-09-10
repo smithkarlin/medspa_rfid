@@ -7,7 +7,7 @@ import ui
 
 ui.inject_base_css()
 ui.require_clinic()
-ui.render_sidebar_account()
+ui.render_top_bar()
 
 ui.render_page_header("📦 Active Inventory", "Live view of all commissioned RFID-tagged stock.")
 

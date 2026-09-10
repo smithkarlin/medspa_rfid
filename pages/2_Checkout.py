@@ -7,7 +7,7 @@ import ui
 
 ui.inject_base_css()
 ui.require_clinic()
-ui.render_sidebar_account()
+ui.render_top_bar()
 
 ui.render_page_header("✅ Checkout", "Scan an RFID tag to mark a product used and remove it from active stock.")
 

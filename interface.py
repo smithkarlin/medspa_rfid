@@ -13,6 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
+st.logo("assets/tagmate_icon.png", size="large")
 ui.inject_base_css()
 
 if not auth.is_logged_in():
@@ -73,27 +74,27 @@ if not auth.has_clinic():
 # text, regardless of what attributes a given Streamlit version exposes on
 # a StreamlitPage object.
 PAGE_SPECS = [
-    ("intake", "pages/1_Express_Intake.py", "Express Intake",
+    ("intake", "pages/1_Express_Intake.py", "Express Intake", ":material/qr_code_scanner:",
      "Scan a box barcode, then an RFID tag, to commission new stock."),
-    ("checkout", "pages/2_Checkout.py", "Checkout",
+    ("checkout", "pages/2_Checkout.py", "Checkout", ":material/task_alt:",
      "Scan an RFID tag to mark a product used and remove it from active stock."),
-    ("count", "pages/3_Daily_Count.py", "Daily Count",
+    ("count", "pages/3_Daily_Count.py", "Daily Count", ":material/fact_check:",
      "Walk a room with a handheld scanner to reconcile inventory."),
-    ("inventory", "pages/4_Active_Inventory.py", "Active Inventory",
+    ("inventory", "pages/4_Active_Inventory.py", "Active Inventory", ":material/inventory_2:",
      "See everything currently tagged and in stock."),
-    ("settings", "pages/5_Settings.py", "Settings",
+    ("settings", "pages/5_Settings.py", "Settings", ":material/settings:",
      "Manage storage locations and sync your product catalog."),
-    ("analytics", "pages/6_Analytics.py", "Analytics",
+    ("analytics", "pages/6_Analytics.py", "Analytics", ":material/insights:",
      "Dashboards on stock levels, usage, and expiration risk."),
-    ("vendors", "pages/7_Vendors.py", "Vendors",
+    ("vendors", "pages/7_Vendors.py", "Vendors", ":material/local_shipping:",
      "Manage suppliers and see which products come from where."),
 ]
 
-pages = {key: st.Page(path, title=title) for key, path, title, _ in PAGE_SPECS}
+pages = {key: st.Page(path, title=title, icon=icon) for key, path, title, icon, _ in PAGE_SPECS}
 
 
 def render_home():
-    ui.render_sidebar_account()
+    ui.render_top_bar()
 
     clinic_name = auth.get_clinic_name()
     ui.render_page_header(
@@ -117,12 +118,12 @@ def render_home():
 
         link_col1, link_col2 = st.columns(2)
         columns = [link_col1, link_col2]
-        for i, (key, _path, title, description) in enumerate(PAGE_SPECS):
+        for i, (key, _path, title, _icon, description) in enumerate(PAGE_SPECS):
             with columns[i % 2]:
                 st.page_link(pages[key], label=title, use_container_width=True)
                 st.caption(description)
 
 
-nav_pages = [st.Page(render_home, title="Main", default=True)] + list(pages.values())
+nav_pages = [st.Page(render_home, title="Main", icon=":material/dashboard:", default=True)] + list(pages.values())
 pg = st.navigation(nav_pages)
 pg.run()

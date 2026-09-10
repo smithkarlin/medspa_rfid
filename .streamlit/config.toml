@@ -1,6 +1,7 @@
-# tagmate app theme -- professional dark sidebar over a light, clean
-# workspace, similar to the reference platforms (Veeqo-style layout,
-# medspa competitor dashboards).
+# Tagmate app theme -- a near-black sidebar (matching the logo's black
+# background) over a light, clean workspace, with a Veeqo-style layout:
+# logo mark at the top of the sidebar, icon-led nav below it, and the
+# active page highlighted as a rounded pill in the brand blue.
 
 [theme]
 base = "light"
@@ -11,6 +12,6 @@ textColor = "#1B2340"
 font = "sans serif"
 
 [theme.sidebar]
-backgroundColor = "#12172B"
-secondaryBackgroundColor = "#1B2340"
-textColor = "#E7EAF3"
+backgroundColor = "#0E0E10"
+secondaryBackgroundColor = "#18181B"
+textColor = "#E9EAEE"
