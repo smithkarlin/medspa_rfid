@@ -24,11 +24,9 @@ render_kpi_card = ui.render_kpi_card
 
 
 def render_analytics_page():
-    if not auth.is_logged_in() or not auth.has_clinic():
-        st.warning("Please log in from the main tagmate page first.")
-        st.stop()
-
     ui.inject_base_css()
+    ui.require_clinic()
+    ui.render_sidebar_account()
     ui.render_page_header("📊 Dashboard", "Real-time clinical visibility, site filtering, and asset tracking powered by tagmate.")
 
     try:

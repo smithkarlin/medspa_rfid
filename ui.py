@@ -124,3 +124,29 @@ def render_kpi_card(label: str, value: str) -> None:
 def badge(text: str, kind: str = "neutral") -> str:
     """HTML for a colored status pill. kind: success, warning, danger, info, neutral."""
     return f'<span class="tm-badge tm-badge-{kind}">{text}</span>'
+
+
+def require_clinic() -> None:
+    """Auth gate for every page under pages/. Stops the page (with a
+    friendly message) unless the user is logged in AND has finished
+    clinic setup. Import auth lazily to avoid a circular import at
+    module load time."""
+    import auth
+    if not auth.is_logged_in() or not auth.has_clinic():
+        st.warning("Please log in from the **tagmate** home page first.")
+        st.stop()
+
+
+def render_sidebar_account() -> None:
+    """Signed-in-as / clinic / staff / log-out block, shown in the
+    sidebar on every page."""
+    import auth
+    with st.sidebar:
+        profile = auth.get_profile()
+        clinic_name = auth.get_clinic_name()
+        st.caption(f"Signed in as **{auth.get_user().email}**")
+        if clinic_name:
+            st.caption(f"Clinic: **{clinic_name}**")
+        if profile and profile.get("full_name"):
+            st.caption(f"Staff: {profile['full_name']}")
+        st.button("Log Out", on_click=auth.sign_out, use_container_width=True)
