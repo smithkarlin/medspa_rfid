@@ -1,7 +1,8 @@
-import sqlite3
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+
+import db
 
 # ==============================================================
 # PAGE CONFIG
@@ -83,7 +84,7 @@ def render_kpi_card(label: str, value: str):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_analytics_page(db_file: str = "medspa.db"):
+def render_analytics_page():
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
     st.markdown(
@@ -94,52 +95,37 @@ def render_analytics_page(db_file: str = "medspa.db"):
         unsafe_allow_html=True,
     )
 
-    conn = sqlite3.connect(db_file)
-
-    # Schema Verification & Migration
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS barcode_inventory (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                barcode TEXT,
-                product_name TEXT,
-                sku TEXT,
-                expiration_date TEXT,
-                received_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                unit_cost REAL DEFAULT 0.0,
-                status TEXT DEFAULT 'In Stock',
-                location TEXT DEFAULT 'Main Facility'
-            )
-        """)
-        conn.commit()
+        # ==========================================================
+        # LOAD DATA (fetched once per page load, filtered with pandas)
+        # ==========================================================
+        tagged_df = db.fetch_df(
+            "tagged_inventory",
+            columns=["epc", "sku", "product_name", "expiration_date", "lot_number",
+                     "location", "status", "commissioned_at", "last_scanned_at"],
+        )
+        barcode_df = db.fetch_df(
+            "barcode_inventory",
+            columns=["id", "barcode", "product_name", "sku", "expiration_date",
+                     "received_date", "unit_cost", "status", "location"],
+        )
+        catalog_df = db.fetch_df(
+            "product_catalog",
+            columns=["sku", "barcode", "product_name", "unit_cost", "reorder_level"],
+        )
 
-        cursor.execute("PRAGMA table_info(barcode_inventory)")
-        b_cols = [col[1] for col in cursor.fetchall()]
-        if 'location' not in b_cols:
-            cursor.execute("ALTER TABLE barcode_inventory ADD COLUMN location TEXT DEFAULT 'Main Facility'")
-            conn.commit()
+        tagged_df = tagged_df.merge(
+            catalog_df[["sku", "product_name", "unit_cost"]].rename(columns={"product_name": "catalog_product_name"}),
+            on="sku", how="left"
+        )
 
-        cursor.execute("PRAGMA table_info(tagged_inventory)")
-        t_cols = [col[1] for col in cursor.fetchall()]
-        if 'location' not in t_cols:
-            cursor.execute("ALTER TABLE tagged_inventory ADD COLUMN location TEXT DEFAULT 'Main Facility'")
-            conn.commit()
-
-    except Exception as schema_err:
-        st.warning(f"Note: Could not auto-verify database schema: {schema_err}")
-
-    try:
         # ==========================================================
         # GLOBAL SITE / FACILITY FILTER
         # ==========================================================
-        site_query = """
-        SELECT DISTINCT location FROM tagged_inventory WHERE location IS NOT NULL AND location != ''
-        UNION
-        SELECT DISTINCT location FROM barcode_inventory WHERE location IS NOT NULL AND location != ''
-        """
-        db_sites = [r[0] for r in conn.execute(site_query).fetchall()]
-        all_sites = ["All Med Spa Sites"] + sorted(db_sites)
+        tagged_sites = tagged_df["location"].dropna()
+        barcode_sites = barcode_df["location"].dropna()
+        db_sites = sorted((set(tagged_sites) | set(barcode_sites)) - {""})
+        all_sites = ["All Med Spa Sites"] + db_sites
 
         selected_site = st.selectbox(
             "Site / Location",
@@ -148,64 +134,36 @@ def render_analytics_page(db_file: str = "medspa.db"):
             key="global_site_filter",
         )
 
-        site_clause_tagged = ""
-        site_clause_barcode = ""
-        params_tagged = []
-        params_barcode = []
+        def filter_site(frame: pd.DataFrame) -> pd.DataFrame:
+            if selected_site == "All Med Spa Sites":
+                return frame
+            return frame[frame["location"] == selected_site]
 
-        if selected_site != "All Med Spa Sites":
-            site_clause_tagged = " AND t.location = ?"
-            site_clause_barcode = " AND location = ?"
-            params_tagged.append(selected_site)
-            params_barcode.append(selected_site)
+        tagged_filtered = filter_site(tagged_df)
+        barcode_filtered = filter_site(barcode_df)
+
+        tagged_in_stock = tagged_filtered[tagged_filtered["status"] == "In Stock"]
+        barcode_in_stock = barcode_filtered[barcode_filtered["status"] == "In Stock"]
 
         # ==========================================================
         # 1. CLEAN GRADIENT KPI CARDS
         # ==========================================================
-        rfid_query = f"SELECT COUNT(*) FROM tagged_inventory t WHERE t.status = 'In Stock'{site_clause_tagged}"
-        total_rfid_items = conn.execute(rfid_query, params_tagged).fetchone()[0]
-
-        barcode_stock_q = f"SELECT COUNT(*) FROM barcode_inventory WHERE status = 'In Stock'{site_clause_barcode}"
-        total_barcode_items = conn.execute(barcode_stock_q, params_barcode).fetchone()[0]
+        total_rfid_items = len(tagged_in_stock)
+        total_barcode_items = len(barcode_in_stock)
         total_in_stock = total_rfid_items + total_barcode_items
 
-        weekly_spend_rfid_q = f"""
-        SELECT SUM(COALESCE(p.unit_cost, 0.0))
-        FROM tagged_inventory t
-        LEFT JOIN product_catalog p ON t.sku = p.sku
-        WHERE t.status = 'In Stock'{site_clause_tagged}
-        """
-        rfid_val = conn.execute(weekly_spend_rfid_q, params_tagged).fetchone()[0] or 0.0
-
-        barcode_val_q = f"SELECT SUM(unit_cost) FROM barcode_inventory WHERE status = 'In Stock'{site_clause_barcode}"
-        barcode_val = conn.execute(barcode_val_q, params_barcode).fetchone()[0] or 0.0
+        rfid_val = float(tagged_in_stock["unit_cost"].fillna(0.0).sum())
+        barcode_val = float(barcode_in_stock["unit_cost"].fillna(0.0).sum())
         total_inventory_value = rfid_val + barcode_val
 
-        unique_sku_query = f"""
-        SELECT COUNT(DISTINCT sku) FROM (
-            SELECT sku FROM tagged_inventory t WHERE t.status = 'In Stock'{site_clause_tagged}
-            UNION
-            SELECT sku FROM barcode_inventory WHERE status = 'In Stock'{site_clause_barcode}
-        )
-        """
-        params_combined = params_tagged + params_barcode
-        unique_products = conn.execute(unique_sku_query, params_combined).fetchone()[0] if params_combined else conn.execute("""
-            SELECT COUNT(DISTINCT sku) FROM (
-                SELECT sku FROM tagged_inventory WHERE status = 'In Stock'
-                UNION
-                SELECT sku FROM barcode_inventory WHERE status = 'In Stock'
-            )
-        """).fetchone()[0]
+        unique_products = len(set(tagged_in_stock["sku"]) | set(barcode_in_stock["sku"]))
 
-        expiring_q = f"""
-        SELECT COUNT(*) FROM barcode_inventory 
-        WHERE status = 'In Stock' AND expiration_date IS NOT NULL 
-        AND julianday(expiration_date) - julianday('now') <= 30{site_clause_barcode}
-        """
-        expiring_soon = conn.execute(expiring_q, params_barcode).fetchone()[0] or 0
+        exp_dt_kpi = pd.to_datetime(barcode_in_stock["expiration_date"], errors="coerce")
+        days_out = (exp_dt_kpi - pd.Timestamp.now().normalize()).dt.days
+        expiring_soon = int(((days_out <= 30) & exp_dt_kpi.notna()).sum())
 
         kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
-        
+
         with kpi_col1:
             render_kpi_card("Items In Stock", f"{total_in_stock:,}")
         with kpi_col2:
@@ -222,31 +180,31 @@ def render_analytics_page(db_file: str = "medspa.db"):
         # ==========================================================
         col_left, col_right = st.columns([1, 1], gap="medium")
 
-        # Query RFID items (assume non-expiring unless expiration added to schema)
-        df_rfid = pd.read_sql_query(
-            f"SELECT COALESCE(p.product_name, t.sku) as product, t.sku, NULL as expiration_date, 'RFID' as source FROM tagged_inventory t LEFT JOIN product_catalog p ON t.sku = p.sku WHERE t.status = 'In Stock'{site_clause_tagged}",
-            conn, params=params_tagged
-        )
+        df_rfid = pd.DataFrame({
+            "product": tagged_in_stock["catalog_product_name"].fillna(tagged_in_stock["sku"]),
+            "sku": tagged_in_stock["sku"],
+            "expiration_date": pd.NA,
+            "source": "RFID",
+        })
 
-        # Query Barcode items with expiration dates
-        df_bc = pd.read_sql_query(
-            f"SELECT COALESCE(product_name, sku) as product, sku, expiration_date, 'Barcode' as source FROM barcode_inventory WHERE status = 'In Stock'{site_clause_barcode}",
-            conn, params=params_barcode
-        )
-        
+        df_bc = pd.DataFrame({
+            "product": barcode_in_stock["product_name"].fillna(barcode_in_stock["sku"]),
+            "sku": barcode_in_stock["sku"],
+            "expiration_date": barcode_in_stock["expiration_date"],
+            "source": "Barcode",
+        })
+
         df_combined = pd.concat([df_rfid, df_bc], ignore_index=True)
 
-        # LEFT PANEL: Top Products Remaining (Stacked Bar Chart for Expiration Risk)
         with col_left:
             with st.container(border=True):
                 st.markdown('<div class="tm-panel-title">Units Remaining by Product (Top 10)</div>', unsafe_allow_html=True)
-                
+
                 if not df_combined.empty:
                     today = pd.to_datetime('today').normalize()
                     df_combined['exp_dt'] = pd.to_datetime(df_combined['expiration_date'], errors='coerce')
                     df_combined['is_expiring_30d'] = (df_combined['exp_dt'].notnull()) & ((df_combined['exp_dt'] - today).dt.days <= 30)
 
-                    # Group by product
                     grouped = df_combined.groupby('product').agg(
                         total_units=('product', 'count'),
                         expiring_units=('is_expiring_30d', 'sum')
@@ -254,14 +212,11 @@ def render_analytics_page(db_file: str = "medspa.db"):
 
                     grouped['healthy_units'] = grouped['total_units'] - grouped['expiring_units']
 
-                    # Take top 10 products by total volume
                     top_10 = grouped.sort_values(by='total_units', ascending=False).head(10)
-                    # Sort ascending for horizontal bar chart layout
                     top_10 = top_10.sort_values(by='total_units', ascending=True)
 
                     fig_top = go.Figure()
 
-                    # Healthy Stock Trace (Blue)
                     fig_top.add_trace(go.Bar(
                         y=top_10['product'],
                         x=top_10['healthy_units'],
@@ -270,7 +225,6 @@ def render_analytics_page(db_file: str = "medspa.db"):
                         marker=dict(color=BLUE_2),
                     ))
 
-                    # Expiring Stock Trace (Red)
                     fig_top.add_trace(go.Bar(
                         y=top_10['product'],
                         x=top_10['expiring_units'],
@@ -296,7 +250,6 @@ def render_analytics_page(db_file: str = "medspa.db"):
                 else:
                     st.info("No items currently in stock for this location.")
 
-        # RIGHT PANEL: Total Stock by Category / Source
         with col_right:
             with st.container(border=True):
                 st.markdown('<div class="tm-panel-title">Units Remaining by Tracking Type</div>', unsafe_allow_html=True)
@@ -337,18 +290,16 @@ def render_analytics_page(db_file: str = "medspa.db"):
             with header_col:
                 st.markdown('<div class="tm-panel-title">Items Nearing Expiration</div>', unsafe_allow_html=True)
 
-            barcode_full_q = f"""
-            SELECT
-                barcode AS 'Barcode',
-                product_name AS 'Product Name',
-                sku AS 'SKU',
-                expiration_date AS 'Expiration Date',
-                unit_cost AS 'Cost ($)',
-                location AS 'Location'
-            FROM barcode_inventory
-            WHERE status = 'In Stock' AND expiration_date IS NOT NULL{site_clause_barcode}
-            """
-            df_full = pd.read_sql_query(barcode_full_q, conn, params=params_barcode)
+            df_full = barcode_filtered[
+                (barcode_filtered["status"] == "In Stock") & (barcode_filtered["expiration_date"].notna())
+            ][["barcode", "product_name", "sku", "expiration_date", "unit_cost", "location"]].rename(columns={
+                "barcode": "Barcode",
+                "product_name": "Product Name",
+                "sku": "SKU",
+                "expiration_date": "Expiration Date",
+                "unit_cost": "Cost ($)",
+                "location": "Location",
+            })
 
             if not df_full.empty:
                 df_full['exp_dt'] = pd.to_datetime(df_full['Expiration Date'], errors='coerce')
@@ -391,9 +342,7 @@ def render_analytics_page(db_file: str = "medspa.db"):
 
     except Exception as e:
         st.error(f"Database Read Error: {e}")
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":
-    render_analytics_page("medspa.db")
+    render_analytics_page()

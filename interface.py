@@ -1,95 +1,9 @@
-import os
 import re
-import sqlite3
 from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-# ==========================================================
-# DATABASE INITIALIZATION
-# ==========================================================
-DB_FILE = "medspa.db"
-
-def init_sqlite_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # Master Catalog
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS product_catalog (
-            sku TEXT PRIMARY KEY,
-            barcode TEXT,
-            product_name TEXT NOT NULL,
-            unit_cost REAL DEFAULT 0.0,
-            reorder_level INTEGER DEFAULT 5
-        )
-    """)
-    
-    # Tagged RFID Inventory
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tagged_inventory (
-            epc TEXT PRIMARY KEY,
-            sku TEXT NOT NULL,
-            product_name TEXT NOT NULL,
-            expiration_date TEXT,
-            lot_number TEXT,
-            location TEXT NOT NULL,
-            status TEXT DEFAULT 'In Stock',
-            commissioned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_scanned_at TIMESTAMP,
-            FOREIGN KEY (sku) REFERENCES product_catalog (sku)
-        )
-    """)
-
-    # Check for missing column auto-migrations
-    cursor.execute("PRAGMA table_info(tagged_inventory)")
-    t_cols = [c[1] for c in cursor.fetchall()]
-    if 'last_scanned_at' not in t_cols:
-        cursor.execute("ALTER TABLE tagged_inventory ADD COLUMN last_scanned_at TIMESTAMP")
-
-    # Locations
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS locations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            location_name TEXT UNIQUE NOT NULL
-        )
-    """)
-
-    # Daily Audits
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS daily_audits (
-            audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            audit_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            location TEXT NOT NULL,
-            expected_count INTEGER,
-            scanned_count INTEGER,
-            discrepancy INTEGER,
-            audited_by TEXT
-        )
-    """)
-
-    cursor.execute("SELECT COUNT(*) FROM locations")
-    if cursor.fetchone()[0] == 0:
-        default_locs = [
-            ("Treatment Room 1",),
-            ("Treatment Room 2",),
-            ("Main Vault / Refrigerator",),
-            ("Back Office Storage",)
-        ]
-        cursor.executemany("INSERT INTO locations (location_name) VALUES (?)", default_locs)
-
-    conn.commit()
-    conn.close()
-
-init_sqlite_db()
-
-def get_locations_list():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT location_name FROM locations ORDER BY location_name ASC")
-    rows = cursor.fetchall()
-    conn.close()
-    return [r[0] for r in rows]
+import db
 
 # ==========================================================
 # CALLBACK FUNCTIONS & PARSERS
@@ -98,14 +12,14 @@ def parse_gs1_barcode(raw_barcode: str):
     data = {"gtin": None, "expiration": None, "lot": None}
     if not raw_barcode:
         return data
-        
+
     clean_code = raw_barcode.strip().replace("(", "").replace(")", "").replace("\x1d", "")
     clean_code = re.sub(r'^\][a-zA-Z0-9]{2}', '', clean_code)
-    
+
     gtin_match = re.search(r'01(\d{14})', clean_code)
     if gtin_match:
         data["gtin"] = gtin_match.group(1)
-        
+
     exp_match = re.search(r'17(\d{6})', clean_code)
     if exp_match:
         raw_date = exp_match.group(1)
@@ -121,39 +35,23 @@ def parse_gs1_barcode(raw_barcode: str):
 
     return data
 
-def lookup_barcode_in_catalog(barcode_or_gtin: str):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT sku, product_name FROM product_catalog WHERE barcode = ? OR sku = ?", 
-        (barcode_or_gtin.strip(), barcode_or_gtin.strip())
-    )
-    row = cursor.fetchone()
-    conn.close()
-    return row
 
 def process_rfid_scan():
     """Callback for continuous RFID room scanning in Tab 2."""
     raw_input = st.session_state.get("audit_rfid_stream", "").strip()
     if not raw_input:
         return
-        
-    # 1. Regex to extract strictly valid 24-char Hex EPCs starting with E200 or E280
-    # Ignores trailing scanner control characters like '0D' (Carriage Return)
+
     extracted_tokens = re.findall(r'E2[0-9A-Fa-f]{22}', raw_input)
-    
-    # Clean tokens to uppercase
     cleaned_tokens = [t.strip().upper() for t in extracted_tokens]
-    
-    # 2. Filter duplicates against session buffer and current batch
+
     existing_set = set(st.session_state.get("scanned_buffer", []))
     new_unique_tags = []
-    
+
     for tag in cleaned_tokens:
         if tag not in existing_set and tag not in new_unique_tags:
             new_unique_tags.append(tag)
-            
-    # 3. Update session buffer and send user feedback
+
     if new_unique_tags:
         if "scanned_buffer" not in st.session_state:
             st.session_state.scanned_buffer = []
@@ -161,8 +59,7 @@ def process_rfid_scan():
         st.toast(f"✅ Added {len(new_unique_tags)} new distinct tag(s)!")
     else:
         st.toast("⚠️ Ignored duplicate tag(s) from scan.")
-        
-    # 4. Safely clear the text field inside the callback
+
     st.session_state["audit_rfid_stream"] = ""
 
 # ==========================================================
@@ -178,9 +75,9 @@ st.title("🏷️ tagmate inventory controller")
 st.caption("UHF RFID & Barcode Intake System | Pilot Build")
 
 tab_intake, tab_count, tab_inventory, tab_admin = st.tabs([
-    "📥 Express Intake", 
+    "📥 Express Intake",
     "📋 Daily Inventory Count",
-    "📊 Active Inventory", 
+    "📊 Active Inventory",
     "⚙️ Catalog & Location Settings"
 ])
 
@@ -200,11 +97,7 @@ with tab_intake:
     if "last_scanned_barcode" not in st.session_state:
         st.session_state["last_scanned_barcode"] = ""
 
-    conn = sqlite3.connect(DB_FILE)
-    df_cat = pd.read_sql_query("SELECT sku, product_name FROM product_catalog", conn)
-    conn.close()
-
-    catalog_options = dict(zip(df_cat['sku'], df_cat['product_name'])) if not df_cat.empty else {}
+    catalog_options = db.get_catalog_options()
     catalog_options["CUSTOM"] = "Custom / Unlisted Product"
 
     def process_scanned_barcode():
@@ -212,15 +105,15 @@ with tab_intake:
         if scanned_val and scanned_val != st.session_state.last_scanned_barcode:
             st.session_state.last_scanned_barcode = scanned_val
             parsed = parse_gs1_barcode(scanned_val)
-            
+
             if parsed["expiration"]:
                 st.session_state["widget_exp"] = parsed["expiration"]
-                
+
             if parsed["lot"]:
                 st.session_state["widget_lot"] = parsed["lot"]
-                
+
             search_key = parsed["gtin"] if parsed["gtin"] else scanned_val
-            matched = lookup_barcode_in_catalog(search_key)
+            matched = db.lookup_barcode_in_catalog(search_key)
             if matched and matched[0] in catalog_options:
                 st.session_state["widget_sku"] = matched[0]
                 st.toast(f"✅ Auto-Matched Catalog: {matched[1]}")
@@ -262,7 +155,7 @@ with tab_intake:
 
     with col_lot:
         lot_number = st.text_input(
-            "Lot Number", 
+            "Lot Number",
             key="widget_lot"
         )
 
@@ -279,7 +172,7 @@ with tab_intake:
         )
 
     with col_loc:
-        current_locations = get_locations_list()
+        current_locations = db.get_locations_list()
         target_location = st.selectbox(
             "3. Assign to Storage Location",
             options=current_locations if current_locations else ["Main Vault / Refrigerator"],
@@ -298,21 +191,10 @@ with tab_intake:
             clean_epc = rfid_epc.strip()
 
             try:
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO tagged_inventory (epc, sku, product_name, expiration_date, lot_number, location)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    clean_epc,
-                    selected_sku,
-                    prod_name,
-                    str(expiration_date),
-                    lot_number.strip(),
-                    target_location
-                ))
-                conn.commit()
-                conn.close()
+                db.insert_tagged_item(
+                    clean_epc, selected_sku, prod_name,
+                    expiration_date, lot_number.strip(), target_location
+                )
 
                 st.balloons()
                 st.toast(f"✅ Commissioned {prod_name} to {target_location}!")
@@ -323,8 +205,8 @@ with tab_intake:
                 st.session_state["widget_lot"] = ""
                 st.session_state["last_scanned_barcode"] = ""
                 st.rerun()
-                
-            except sqlite3.IntegrityError:
+
+            except db.DuplicateError:
                 st.error(f"❌ **Duplicate Tag Error:** RFID Tag `{clean_epc}` is already assigned to another item in the database!")
 
 # ==========================================================
@@ -334,41 +216,30 @@ with tab_count:
     st.subheader("📋 Continuous Room Inventory Audit")
     st.caption("Select a room, click 'Start Room Scan', walk around scanning tags with your handheld reader, and click 'Stop & Process Scan' to reconcile.")
 
-    current_locations = get_locations_list()
+    current_locations = db.get_locations_list()
     audit_location = st.selectbox(
-        "📍 Select Target Room / Location to Audit:", 
+        "📍 Select Target Room / Location to Audit:",
         options=current_locations if current_locations else ["Main Vault / Refrigerator"],
         key="audit_room_select"
     )
 
-    # Initialize Session States for Continuous Scanning
     if "is_scanning" not in st.session_state:
         st.session_state.is_scanning = False
     if "scanned_buffer" not in st.session_state:
         st.session_state.scanned_buffer = []
 
-    # Fetch Expected Count in Selected Room from DB
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT COUNT(*) FROM tagged_inventory 
-        WHERE location = ? AND status = 'In Stock'
-    """, (audit_location,))
-    expected_count = cursor.fetchone()[0]
-    conn.close()
+    expected_count = db.get_expected_count(audit_location)
 
-    # Metrics Overview Header
     col_m1, col_m2, col_m3 = st.columns(3)
     col_m1.metric("Expected Items in Room", expected_count)
     unique_buffered_count = len(set(st.session_state.scanned_buffer))
     col_m2.metric("Buffered Unique Tags Scanned", unique_buffered_count)
-    
+
     diff_prelim = unique_buffered_count - expected_count
     col_m3.metric("Live Variance", diff_prelim, delta_color="inverse")
 
     st.markdown("---")
 
-    # Scanning Controls
     col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 1])
 
     with col_btn1:
@@ -382,30 +253,23 @@ with tab_count:
     with col_btn2:
         if st.button("⏹️ Stop & Process Scan", disabled=not st.session_state.is_scanning, use_container_width=True):
             st.session_state.is_scanning = False
-            
-            # --- PROCESS BUFFERED EPC TAGS & RECONCILE ROOM SHIFTS ---
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            
+
             unique_epcs = list(set(st.session_state.scanned_buffer))
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             processed_results = []
-            
+
             shifted_count = 0
             verified_count = 0
             unregistered_count = 0
 
             for epc in unique_epcs:
-                cursor.execute("""
-                    SELECT product_name, location, status, lot_number 
-                    FROM tagged_inventory 
-                    WHERE epc = ?
-                """, (epc,))
-                row = cursor.fetchone()
+                row = db.get_tagged_item(epc)
 
                 if row:
-                    product_name, old_location, status, lot_number = row[0], row[1], row[2], row[3]
-                    
+                    product_name = row["product_name"]
+                    old_location = row["location"]
+                    lot_number = row["lot_number"]
+
                     if old_location and old_location != audit_location:
                         scan_status = f"🟨 Room Shifted (Moved from '{old_location}')"
                         shifted_count += 1
@@ -413,12 +277,7 @@ with tab_count:
                         scan_status = "🟢 Verified in Room"
                         verified_count += 1
 
-                    # Auto-update SQLite DB with new room location and timestamp
-                    cursor.execute("""
-                        UPDATE tagged_inventory 
-                        SET location = ?, last_scanned_at = ?, status = 'In Stock'
-                        WHERE epc = ?
-                    """, (audit_location, now_str, epc))
+                    db.update_tagged_location(epc, audit_location, now_str)
                 else:
                     product_name = "Unregistered EPC Tag"
                     scan_status = "🟦 New/Unregistered Tag"
@@ -435,17 +294,9 @@ with tab_count:
                     "Audit Status": scan_status
                 })
 
-            # Save Audit Summary to `daily_audits` DB Table
             discrepancy = len(unique_epcs) - expected_count
-            cursor.execute("""
-                INSERT INTO daily_audits (location, expected_count, scanned_count, discrepancy, audited_by)
-                VALUES (?, ?, ?, ?, ?)
-            """, (audit_location, expected_count, len(unique_epcs), discrepancy, "Clinic Staff"))
+            db.insert_daily_audit(audit_location, expected_count, len(unique_epcs), discrepancy, "Clinic Staff")
 
-            conn.commit()
-            conn.close()
-
-            # Store audit results in state
             st.session_state.last_audit_summary = {
                 "results": processed_results,
                 "room": audit_location,
@@ -465,18 +316,16 @@ with tab_count:
                 del st.session_state.last_audit_summary
             st.rerun()
 
-    # Active Scanning Mode Buffer Stream Input Field
     if st.session_state.is_scanning:
         st.info(f"📡 **SCANNING ACTIVE in {audit_location}...** Walk around the room with your handheld scanner. Focus input field below.")
-        
+
         st.text_input(
-            "Handheld RFID Reader Stream Input:", 
+            "Handheld RFID Reader Stream Input:",
             key="audit_rfid_stream",
             placeholder="Hold trigger / scan stream here...",
             on_change=process_rfid_scan
         )
 
-    # Processed Results Display Table & Report
     if "last_audit_summary" in st.session_state:
         summary = st.session_state.last_audit_summary
         st.markdown("---")
@@ -490,7 +339,6 @@ with tab_count:
 
         df_summary = pd.DataFrame(summary['results'])
 
-        # Option 2: Full Row-Level Highlighting Function
         def highlight_entire_row(row):
             status = str(row["Audit Status"])
             if "Room Shifted" in status:
@@ -512,22 +360,8 @@ with tab_count:
 # ==========================================================
 with tab_inventory:
     st.subheader("📊 Live Commissioned Stock")
-    
-    conn = sqlite3.connect(DB_FILE)
-    df_inv = pd.read_sql_query("""
-        SELECT 
-            epc AS 'RFID Tag (EPC)', 
-            product_name AS 'Product Name', 
-            location AS 'Storage Location', 
-            expiration_date AS 'Expiration Date', 
-            lot_number AS 'Lot Number', 
-            status AS 'Status', 
-            commissioned_at AS 'Commissioned At',
-            last_scanned_at AS 'Last Scanned At'
-        FROM tagged_inventory 
-        ORDER BY commissioned_at DESC
-    """, conn)
-    conn.close()
+
+    df_inv = db.get_all_tagged_inventory_df()
 
     if df_inv.empty:
         st.info("No items tagged yet. Use the 'Express Intake' tab to commission your first RFID asset.")
@@ -540,7 +374,7 @@ with tab_inventory:
 # ==========================================================
 with tab_admin:
     st.subheader("📍 Storage Location Manager")
-    
+
     col_add_loc, col_del_loc = st.columns(2)
 
     with col_add_loc:
@@ -549,27 +383,19 @@ with tab_admin:
         if st.button("➕ Add Location"):
             if new_loc_name.strip():
                 try:
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    cursor.execute("INSERT INTO locations (location_name) VALUES (?)", (new_loc_name.strip(),))
-                    conn.commit()
-                    conn.close()
+                    db.add_location(new_loc_name.strip())
                     st.success(f"Added **{new_loc_name.strip()}**!")
                     st.rerun()
-                except sqlite3.IntegrityError:
+                except db.DuplicateError:
                     st.error("Location already exists.")
 
     with col_del_loc:
         st.markdown("#### Remove Location")
-        existing_locs = get_locations_list()
+        existing_locs = db.get_locations_list()
         loc_to_delete = st.selectbox("Select Location to Remove", options=existing_locs if existing_locs else ["None"])
         if st.button("🗑️ Delete Location"):
             if loc_to_delete and loc_to_delete != "None":
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM locations WHERE location_name = ?", (loc_to_delete,))
-                conn.commit()
-                conn.close()
+                db.delete_location(loc_to_delete)
                 st.success(f"Removed **{loc_to_delete}**!")
                 st.rerun()
 
@@ -617,9 +443,7 @@ with tab_admin:
             st.success(f"✓ Parsed **{len(df_clean)} product records**.")
 
             if st.button("🚀 Sync to Master Database Catalog", type="primary"):
-                conn = sqlite3.connect(DB_FILE)
-                df_clean.to_sql("product_catalog", conn, if_exists="replace", index=False)
-                conn.close()
+                db.sync_catalog(df_clean)
 
                 st.balloons()
                 st.success("✅ Master Catalog updated!")
