@@ -5,11 +5,6 @@ import auth
 import db
 import ui
 
-st.set_page_config(
-    page_title="tagmate | Catalog & Location Settings",
-    page_icon="⚙️",
-    layout="wide"
-)
 
 ui.inject_base_css()
 ui.require_clinic()
@@ -18,6 +13,20 @@ ui.render_sidebar_account()
 CLINIC_ID = auth.current_clinic_id()
 
 ui.render_page_header("⚙️ Catalog & Location Settings", "Manage storage locations and sync your product catalog.")
+
+with st.expander("🧪 Load Sample Data (preview the dashboards)"):
+    st.caption(
+        "Adds 3 sample products (Botox, Juvederm, Vitamin C Serum) with demo "
+        "RFID tags, barcode stock, and a sample vendor, so Analytics and "
+        "Vendors have something to show right away."
+    )
+    if st.button("Load Sample Data"):
+        db.load_sample_data(CLINIC_ID)
+        st.balloons()
+        st.success("Sample data loaded! Check the Analytics and Vendors pages.")
+        st.rerun()
+
+st.markdown("---")
 
 # ==========================================================
 # STORAGE LOCATION MANAGER
@@ -51,6 +60,24 @@ with col_del_loc:
 st.markdown("---")
 
 st.subheader("📤 MDware Catalog Sync")
+
+MDWARE_TEMPLATE_CSV = (
+    "SKU,Barcode/UPC,Product Name,Unit Cost,Reorder Level\n"
+    "BTX-100,00300090856100,Botox 100U,395.00,5\n"
+    "JUV-UXC,00300090862200,Juvederm Ultra XC,275.00,10\n"
+)
+
+dl_col, up_col = st.columns([1, 2])
+with dl_col:
+    st.download_button(
+        "⬇ Download Catalog Template (CSV)",
+        data=MDWARE_TEMPLATE_CSV,
+        file_name="mdware_catalog_template.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+    st.caption("Fill this in with your own products, then upload it below.")
+
 uploaded_file = st.file_uploader("Upload MDware Inventory CSV", type=["csv"])
 
 if uploaded_file is not None:

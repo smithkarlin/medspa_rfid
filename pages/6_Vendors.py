@@ -1,3 +1,5 @@
+import urllib.parse
+
 import pandas as pd
 import streamlit as st
 
@@ -5,7 +7,6 @@ import auth
 import db
 import ui
 
-st.set_page_config(page_title="tagmate Vendors", page_icon="🏭", layout="wide")
 
 ui.inject_base_css()
 ui.require_clinic()
@@ -114,7 +115,7 @@ with st.container(border=True):
     if vendors_df.empty:
         st.info("Add a vendor above first.")
     elif catalog_df.empty:
-        st.info("No products in your catalog yet — add some via Catalog Sync on the main tagmate page.")
+        st.info("No products in your catalog yet — add some via Catalog Sync on the Settings page.")
     else:
         vendor_options = dict(zip(vendors_df["id"], vendors_df["vendor_name"]))
         selected_vendor_id = st.selectbox(
@@ -139,3 +140,80 @@ with st.container(border=True):
             db.assign_vendor_to_skus(selected_vendor_id, selected_skus)
             st.success("Vendor assignment updated.")
             st.rerun()
+
+st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+
+# ==========================================================
+# DRAFT A REORDER EMAIL
+# ==========================================================
+with st.container(border=True):
+    st.markdown('<div class="tm-panel-title">Draft a Reorder Email</div>', unsafe_allow_html=True)
+
+    if vendors_df.empty:
+        st.info("Add a vendor above first.")
+    else:
+        email_vendor_options = dict(zip(vendors_df["id"], vendors_df["vendor_name"]))
+        email_vendor_id = st.selectbox(
+            "Vendor to email",
+            options=list(email_vendor_options.keys()),
+            format_func=lambda vid: email_vendor_options.get(vid, vid),
+            key="email_vendor_select",
+        )
+        vendor_row = vendors_df.loc[vendors_df["id"] == email_vendor_id].iloc[0]
+
+        vendor_products = catalog_df.loc[catalog_df["vendor_id"] == email_vendor_id]
+        email_product_options = dict(zip(vendor_products["sku"], vendor_products["product_name"]))
+
+        email_skus = st.multiselect(
+            "Products to request",
+            options=list(email_product_options.keys()),
+            default=list(email_product_options.keys()),
+            format_func=lambda sku: f"{email_product_options.get(sku, sku)} ({sku})",
+            key="email_product_select",
+        )
+
+        clinic_name = auth.get_clinic_name() or "our clinic"
+        profile = auth.get_profile()
+        staff_name = (profile or {}).get("full_name") or "Clinic Staff"
+        contact_first = (vendor_row.get("contact_name") or "").split(" ")[0] or "there"
+        lead_time = vendor_row.get("lead_time_days")
+
+        product_lines = "\n".join(f"- {email_product_options[s]} (SKU: {s})" for s in email_skus)
+        if not product_lines:
+            product_lines = "- [select one or more products above]"
+
+        lead_time_line = ""
+        if pd.notna(lead_time):
+            lead_time_line = f"Our standard lead time expectation is {int(lead_time)} days. "
+
+        subject = f"Reorder Request - {clinic_name}"
+        body = (
+            f"Hi {contact_first},\n\n"
+            f"We'd like to place a reorder with {vendor_row['vendor_name']}. "
+            f"Could you please send updated pricing and availability for the following item(s)?\n\n"
+            f"{product_lines}\n\n"
+            f"{lead_time_line}Please let us know if any items are back-ordered.\n\n"
+            f"Thank you,\n{staff_name}\n{clinic_name}"
+        )
+
+        draft_key = f"email_draft_body_{email_vendor_id}_{'_'.join(sorted(email_skus))}"
+        draft_body = st.text_area(
+            "Email draft (edit as needed, then send)",
+            value=body,
+            height=220,
+            key=draft_key,
+        )
+
+        to_addr = vendor_row.get("contact_email") or ""
+        mailto_url = (
+            f"mailto:{urllib.parse.quote(to_addr)}"
+            f"?subject={urllib.parse.quote(subject)}"
+            f"&body={urllib.parse.quote(draft_body)}"
+        )
+
+        send_col, note_col = st.columns([1, 3])
+        with send_col:
+            st.link_button("✉️ Open in Email App", mailto_url, use_container_width=True)
+        with note_col:
+            if not to_addr:
+                st.caption("No contact email on file for this vendor — add one above to prefill the recipient.")

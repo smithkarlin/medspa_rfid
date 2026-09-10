@@ -1,5 +1,5 @@
 """
-Supabase-backed data access layer for the tagmate RFID inventory app.
+Supabase-backed data access layer for the Tagmate RFID inventory app.
 
 All Postgres access for interface.py and pages/2_Analytics.py goes through
 this module instead of talking to sqlite3 directly. Connection details are
@@ -259,3 +259,84 @@ def fetch_df(table: str, columns=None) -> pd.DataFrame:
     if columns is not None:
         df = df.reindex(columns=columns)
     return df
+
+
+# ---------------------------------------------------------------------
+# Barcode (non-RFID) inventory
+# ---------------------------------------------------------------------
+def insert_barcode_item(barcode, product_name, sku, expiration_date, unit_cost,
+                          location, clinic_id, status="In Stock") -> None:
+    get_client().table("barcode_inventory").insert({
+        "clinic_id": clinic_id,
+        "barcode": barcode,
+        "product_name": product_name,
+        "sku": sku,
+        "expiration_date": str(expiration_date),
+        "unit_cost": float(unit_cost),
+        "status": status,
+        "location": location,
+    }).execute()
+
+
+# ---------------------------------------------------------------------
+# Demo / sample data (so a brand-new clinic can preview the dashboards
+# without scanning real inventory first)
+# ---------------------------------------------------------------------
+def load_sample_data(clinic_id: str) -> None:
+    """Seeds 3 sample products across locations, vendor, RFID inventory,
+    and barcode inventory, with staggered expiration dates so the
+    Analytics and Vendors pages have something meaningful to show."""
+    from datetime import date, timedelta
+
+    for loc in ["Treatment Room 1", "Main Vault / Refrigerator"]:
+        if loc not in get_locations_list():
+            try:
+                add_location(loc, clinic_id)
+            except DuplicateError:
+                pass
+
+    try:
+        add_vendor(
+            "Allergan Direct", clinic_id,
+            contact_name="Sam Rivera",
+            contact_email="orders@allergandirect-demo.com",
+            lead_time_days=5,
+            notes="Sample vendor added by Load Sample Data.",
+        )
+    except DuplicateError:
+        pass
+    vendors_df = get_vendors_df()
+    vendor_matches = vendors_df.loc[vendors_df["vendor_name"] == "Allergan Direct", "id"]
+    vendor_id = vendor_matches.iloc[0] if not vendor_matches.empty else None
+
+    sample_products = pd.DataFrame([
+        {"sku": "BTX-100", "barcode": "00300090856100", "product_name": "Botox 100U", "unit_cost": 395.00, "reorder_level": 5},
+        {"sku": "JUV-UXC", "barcode": "00300090862200", "product_name": "Juvederm Ultra XC", "unit_cost": 275.00, "reorder_level": 10},
+        {"sku": "SERUM-VC", "barcode": "00300090899900", "product_name": "Vitamin C Facial Serum", "unit_cost": 68.00, "reorder_level": 8},
+    ])
+    sync_catalog(sample_products, clinic_id)
+    if vendor_id is not None:
+        assign_vendor_to_skus(vendor_id, ["BTX-100", "JUV-UXC", "SERUM-VC"])
+
+    today = date.today()
+    demo_items = [
+        # epc,               sku,          product name,               days_to_exp, lot,        location
+        ("DEMO-TAG-001", "BTX-100", "Botox 100U", -5, "LOT-DEMO1", "Treatment Room 1"),
+        ("DEMO-TAG-002", "JUV-UXC", "Juvederm Ultra XC", 25, "LOT-DEMO2", "Main Vault / Refrigerator"),
+        ("DEMO-TAG-003", "SERUM-VC", "Vitamin C Facial Serum", 65, "LOT-DEMO3", "Treatment Room 1"),
+    ]
+    for epc, sku, name, days_out, lot, loc in demo_items:
+        exp = today + timedelta(days=days_out)
+        try:
+            insert_tagged_item(epc, sku, name, exp, lot, loc, clinic_id)
+        except DuplicateError:
+            pass
+
+    catalog_lookup = {r["sku"]: r for r in sample_products.to_dict("records")}
+    for epc, sku, name, days_out, lot, loc in demo_items:
+        exp = today + timedelta(days=days_out)
+        row = catalog_lookup[sku]
+        try:
+            insert_barcode_item(row["barcode"], name, sku, exp, row["unit_cost"], loc, clinic_id)
+        except Exception:
+            pass

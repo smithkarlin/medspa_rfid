@@ -5,10 +5,10 @@ import db
 import ui
 
 # ==========================================================
-# PAGE CONFIG
+# PAGE CONFIG (called once, here, for the whole app)
 # ==========================================================
 st.set_page_config(
-    page_title="tagmate | RFID Medspa Inventory",
+    page_title="Tagmate | RFID Medspa Inventory",
     page_icon="🏷️",
     layout="wide"
 )
@@ -16,7 +16,7 @@ st.set_page_config(
 ui.inject_base_css()
 
 if not auth.is_logged_in():
-    ui.render_page_header("🏷️ tagmate", "RFID & Barcode Inventory for Medspas")
+    ui.render_page_header("Tagmate", "RFID & Barcode Inventory for Medspas")
 
     login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
 
@@ -49,7 +49,7 @@ if not auth.is_logged_in():
     st.stop()
 
 if not auth.has_clinic():
-    ui.render_page_header("🏷️ Welcome to tagmate", "One more step — let's set up your clinic.")
+    ui.render_page_header("Welcome to Tagmate", "One more step — let's set up your clinic.")
     with st.form("clinic_setup_form"):
         clinic_name = st.text_input("Medspa / Clinic Name")
         full_name = st.text_input("Your Name")
@@ -62,34 +62,65 @@ if not auth.has_clinic():
     st.stop()
 
 # ==========================================================
-# LOGGED IN, CLINIC SET UP: WELCOME / HOME SCREEN
+# NAVIGATION
+# Every page runs through this file first (Streamlit re-executes the
+# entrypoint on every navigation), so the login/clinic gates above apply
+# to the whole app -- no page is reachable without passing them.
 # ==========================================================
-ui.render_sidebar_account()
+# (path, title, description) for every page besides Main -- kept as plain
+# tuples (not read back off the st.Page objects) so the sidebar labels and
+# the "Getting Around" links on the home page always show the exact same
+# text, regardless of what attributes a given Streamlit version exposes on
+# a StreamlitPage object.
+PAGE_SPECS = [
+    ("intake", "pages/1_Express_Intake.py", "Express Intake",
+     "Scan a box barcode, then an RFID tag, to commission new stock."),
+    ("count", "pages/2_Daily_Count.py", "Daily Count",
+     "Walk a room with a handheld scanner to reconcile inventory."),
+    ("inventory", "pages/3_Active_Inventory.py", "Active Inventory",
+     "See everything currently tagged and in stock."),
+    ("settings", "pages/4_Settings.py", "Settings",
+     "Manage storage locations and sync your product catalog."),
+    ("analytics", "pages/5_Analytics.py", "Analytics",
+     "Dashboards on stock levels, usage, and expiration risk."),
+    ("vendors", "pages/6_Vendors.py", "Vendors",
+     "Manage suppliers and see which products come from where."),
+]
 
-clinic_name = auth.get_clinic_name()
-ui.render_page_header(
-    "🏷️ Welcome to tagmate",
-    f"You're signed in to **{clinic_name}**. Use the sidebar to get started."
-)
+pages = {key: st.Page(path, title=title) for key, path, title, _ in PAGE_SPECS}
 
-df_inv = db.get_all_tagged_inventory_df()
-kpi1, kpi2, kpi3 = st.columns(3)
-with kpi1:
-    ui.render_kpi_card("Items In Stock", f"{len(df_inv):,}")
-with kpi2:
-    ui.render_kpi_card("Storage Locations", f"{len(db.get_locations_list()):,}")
-with kpi3:
-    ui.render_kpi_card("Product SKUs", f"{len(db.get_catalog_options()):,}")
 
-st.markdown("---")
-st.markdown(
-    """
-#### Getting Around
-- **📥 Express Intake** — scan a box barcode, then an RFID tag, to commission new stock.
-- **📋 Daily Count** — walk a room with a handheld scanner to reconcile inventory.
-- **📦 Active Inventory** — see everything currently tagged and in stock.
-- **⚙️ Settings** — manage storage locations and sync your product catalog.
-- **📊 Analytics** — dashboards on stock levels, usage, and expiration risk.
-- **🏭 Vendors** — manage suppliers and see which products come from where.
-"""
-)
+def render_home():
+    ui.render_sidebar_account()
+
+    clinic_name = auth.get_clinic_name()
+    ui.render_page_header(
+        "Welcome to Tagmate",
+        f"You're signed in to **{clinic_name}**. Use the menu to get started."
+    )
+
+    df_inv = db.get_all_tagged_inventory_df()
+    kpi1, kpi2, kpi3 = st.columns(3)
+    with kpi1:
+        ui.render_kpi_card("Items In Stock", f"{len(df_inv):,}")
+    with kpi2:
+        ui.render_kpi_card("Storage Locations", f"{len(db.get_locations_list()):,}")
+    with kpi3:
+        ui.render_kpi_card("Product SKUs", f"{len(db.get_catalog_options()):,}")
+
+    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown('<div class="tm-panel-title">Getting Around</div>', unsafe_allow_html=True)
+
+        link_col1, link_col2 = st.columns(2)
+        columns = [link_col1, link_col2]
+        for i, (key, _path, title, description) in enumerate(PAGE_SPECS):
+            with columns[i % 2]:
+                st.page_link(pages[key], label=title, use_container_width=True)
+                st.caption(description)
+
+
+nav_pages = [st.Page(render_home, title="Main", default=True)] + list(pages.values())
+pg = st.navigation(nav_pages)
+pg.run()

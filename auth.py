@@ -1,5 +1,5 @@
 """
-Supabase Auth + clinic (tenant) onboarding for the tagmate app.
+Supabase Auth + clinic (tenant) onboarding for the Tagmate app.
 
 Each browser session gets its own Supabase client (stored in
 st.session_state, not st.cache_resource) so that one visitor logging in

@@ -4,11 +4,6 @@ import auth
 import db
 import ui
 
-st.set_page_config(
-    page_title="tagmate | Active Inventory",
-    page_icon="📦",
-    layout="wide"
-)
 
 ui.inject_base_css()
 ui.require_clinic()

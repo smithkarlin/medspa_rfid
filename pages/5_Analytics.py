@@ -9,7 +9,6 @@ import ui
 # ==============================================================
 # PAGE CONFIG
 # ==============================================================
-st.set_page_config(page_title="tagmate Analytics", page_icon="📊", layout="wide")
 
 # Design tokens now live in ui.py and are shared with every other page,
 # so the whole app reads as one consistent platform.
@@ -27,7 +26,7 @@ def render_analytics_page():
     ui.inject_base_css()
     ui.require_clinic()
     ui.render_sidebar_account()
-    ui.render_page_header("📊 Dashboard", "Real-time clinical visibility, site filtering, and asset tracking powered by tagmate.")
+    ui.render_page_header("📊 Dashboard", "Real-time clinical visibility, site filtering, and asset tracking powered by Tagmate.")
 
     try:
         # ==========================================================

@@ -1,5 +1,5 @@
 """
-Shared design system for the tagmate app: colors, fonts, and reusable CSS
+Shared design system for the Tagmate app: colors, fonts, and reusable CSS
 components (page headers, KPI cards, status badges) used across
 interface.py and every page in pages/, so the app reads as one
 consistent, professional platform instead of separately-styled screens.
@@ -133,7 +133,7 @@ def require_clinic() -> None:
     module load time."""
     import auth
     if not auth.is_logged_in() or not auth.has_clinic():
-        st.warning("Please log in from the **tagmate** home page first.")
+        st.warning("Please log in from the **Tagmate** home page first.")
         st.stop()
 
 
