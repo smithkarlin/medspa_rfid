@@ -338,7 +338,7 @@ def get_reorder_recommendations() -> pd.DataFrame:
     )
     if catalog_df.empty:
         return catalog_df.reindex(columns=[
-            "sku", "product_name", "vendor_id", "current_stock", "reorder_level",
+            "sku", "product_name", "vendor_id", "unit_cost", "current_stock", "reorder_level",
             "weekly_usage", "suggested_week", "suggested_month", "suggested_year", "reorder_now",
         ])
 
@@ -370,6 +370,7 @@ def get_reorder_recommendations() -> pd.DataFrame:
             "sku": sku,
             "product_name": row["product_name"],
             "vendor_id": row["vendor_id"],
+            "unit_cost": float(row["unit_cost"]) if pd.notna(row["unit_cost"]) else 0.0,
             "current_stock": current_stock,
             "reorder_level": reorder_level,
             "weekly_usage": round(weekly, 1),

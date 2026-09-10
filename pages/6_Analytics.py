@@ -273,6 +273,57 @@ def render_analytics_page():
             else:
                 st.info("No barcode inventory records found for this location selection.")
 
+        st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+
+        # ==========================================================
+        # 4. REORDER RECOMMENDATIONS
+        # ==========================================================
+        with st.container(border=True):
+            st.markdown('<div class="tm-panel-title">Reorder Recommendations</div>', unsafe_allow_html=True)
+            st.caption(
+                "Suggested order quantities based on how fast each product has been used "
+                "(mark items 'Used' on the Checkout page to build this history)."
+            )
+
+            reco_df = db.get_reorder_recommendations()
+            if reco_df.empty:
+                st.info("Add products to your catalog to see reorder recommendations.")
+            else:
+                reco_vendors_df = db.get_vendors_df()
+                vendor_name_lookup = (
+                    dict(zip(reco_vendors_df["id"], reco_vendors_df["vendor_name"]))
+                    if not reco_vendors_df.empty else {}
+                )
+                display_reco = reco_df.copy()
+                display_reco["Vendor"] = display_reco["vendor_id"].map(vendor_name_lookup).fillna("—")
+                display_reco["Status"] = display_reco.apply(
+                    lambda r: "🔴 Reorder Now" if r["reorder_now"]
+                    else ("⚪ No Usage History Yet" if r["weekly_usage"] == 0 else "🟢 OK"),
+                    axis=1,
+                )
+                display_reco = display_reco.rename(columns={
+                    "product_name": "Product",
+                    "sku": "SKU",
+                    "current_stock": "Current Stock",
+                    "reorder_level": "Reorder Level",
+                    "weekly_usage": "Avg Weekly Usage",
+                    "suggested_week": "Suggested Qty (1 Week)",
+                    "suggested_month": "Suggested Qty (1 Month)",
+                    "suggested_year": "Suggested Qty (1 Year)",
+                })[[
+                    "Status", "Product", "SKU", "Vendor", "Current Stock", "Reorder Level",
+                    "Avg Weekly Usage", "Suggested Qty (1 Week)", "Suggested Qty (1 Month)", "Suggested Qty (1 Year)",
+                ]]
+
+                st.dataframe(display_reco, use_container_width=True, height=280)
+
+                if (reco_df["weekly_usage"] == 0).any():
+                    st.caption(
+                        "Products showing 'No Usage History Yet' don't have enough data — mark items "
+                        "'Used' on the Checkout page as you go through stock, and these numbers will fill in."
+                    )
+                st.caption("Ready to order? Head to the **Vendors** page to draft a reorder email.")
+
     except Exception as e:
         st.error(f"Database Read Error: {e}")
 

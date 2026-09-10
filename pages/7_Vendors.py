@@ -1,4 +1,5 @@
 import urllib.parse
+import uuid
 
 import pandas as pd
 import streamlit as st
@@ -40,51 +41,6 @@ with kpi3:
     total_products = len(catalog_df)
     linked_products = int(catalog_df["vendor_id"].notna().sum()) if total_products else 0
     ui.render_kpi_card("Products Linked", f"{linked_products:,} / {total_products:,}")
-
-st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
-
-# ==========================================================
-# REORDER RECOMMENDATIONS
-# ==========================================================
-with st.container(border=True):
-    st.markdown('<div class="tm-panel-title">Reorder Recommendations</div>', unsafe_allow_html=True)
-    st.caption(
-        "Suggested order quantities based on how fast each product has been used "
-        "(mark items 'Used' on the Active Inventory page to build this history)."
-    )
-
-    if reco_df.empty:
-        st.info("Add products to your catalog to see reorder recommendations.")
-    else:
-        vendor_name_lookup = dict(zip(vendors_df["id"], vendors_df["vendor_name"])) if not vendors_df.empty else {}
-        display_reco = reco_df.copy()
-        display_reco["Vendor"] = display_reco["vendor_id"].map(vendor_name_lookup).fillna("—")
-        display_reco["Status"] = display_reco.apply(
-            lambda r: "🔴 Reorder Now" if r["reorder_now"]
-            else ("⚪ No Usage History Yet" if r["weekly_usage"] == 0 else "🟢 OK"),
-            axis=1,
-        )
-        display_reco = display_reco.rename(columns={
-            "product_name": "Product",
-            "sku": "SKU",
-            "current_stock": "Current Stock",
-            "reorder_level": "Reorder Level",
-            "weekly_usage": "Avg Weekly Usage",
-            "suggested_week": "Suggested Qty (1 Week)",
-            "suggested_month": "Suggested Qty (1 Month)",
-            "suggested_year": "Suggested Qty (1 Year)",
-        })[[
-            "Status", "Product", "SKU", "Vendor", "Current Stock", "Reorder Level",
-            "Avg Weekly Usage", "Suggested Qty (1 Week)", "Suggested Qty (1 Month)", "Suggested Qty (1 Year)",
-        ]]
-
-        st.dataframe(display_reco, use_container_width=True, height=280)
-
-        if (reco_df["weekly_usage"] == 0).any():
-            st.caption(
-                "Products showing 'No Usage History Yet' don't have enough data — mark items "
-                "'Used' on the Active Inventory page as you go through stock, and these numbers will fill in."
-            )
 
 st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
@@ -195,6 +151,7 @@ st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 # ==========================================================
 with st.container(border=True):
     st.markdown('<div class="tm-panel-title">Draft a Reorder Email</div>', unsafe_allow_html=True)
+    st.caption("See the full reorder recommendations table on the **Analytics** page.")
 
     if vendors_df.empty:
         st.info("Add a vendor above first.")
@@ -211,66 +168,145 @@ with st.container(border=True):
         vendor_products = catalog_df.loc[catalog_df["vendor_id"] == email_vendor_id]
         email_product_options = dict(zip(vendor_products["sku"], vendor_products["product_name"]))
 
-        email_skus = st.multiselect(
-            "Products to request",
-            options=list(email_product_options.keys()),
-            default=list(email_product_options.keys()),
-            format_func=lambda sku: f"{email_product_options.get(sku, sku)} ({sku})",
-            key="email_product_select",
-        )
+        if not email_product_options:
+            st.info("This vendor has no products assigned yet — assign some above first.")
+        else:
+            # Reset the order builder whenever the vendor changes, since the
+            # product dropdown options are vendor-specific.
+            if st.session_state.get("reorder_email_vendor") != email_vendor_id:
+                st.session_state["reorder_email_vendor"] = email_vendor_id
+                st.session_state["reorder_email_lines"] = [uuid.uuid4().hex[:8]]
+            if "reorder_email_lines" not in st.session_state:
+                st.session_state["reorder_email_lines"] = [uuid.uuid4().hex[:8]]
 
-        clinic_name = auth.get_clinic_name() or "our clinic"
-        profile = auth.get_profile()
-        staff_name = (profile or {}).get("full_name") or "Clinic Staff"
-        contact_first = (vendor_row.get("contact_name") or "").split(" ")[0] or "there"
-        lead_time = vendor_row.get("lead_time_days")
+            st.markdown("**Order Line Items**")
+            h1, h2, h3, h4, h5 = st.columns([3, 2.3, 1.3, 1.5, 0.6])
+            h1.caption("Product")
+            h2.caption("Quantity")
+            h3.caption("Custom Qty")
+            h4.caption("Line Cost")
 
-        def format_product_line(sku):
-            name = email_product_options[sku]
-            info = reco_lookup.get(sku)
-            if info and info["suggested_month"] > 0:
-                return (
-                    f"- {name} (SKU: {sku}) — suggested qty: {info['suggested_month']} "
-                    f"(based on ~{info['weekly_usage']}/week usage)"
+            order_rows = []
+            BASIS_LABELS = ["1 Week", "1 Month", "1 Year", "Manual"]
+
+            for line_id in list(st.session_state["reorder_email_lines"]):
+                c1, c2, c3, c4, c5 = st.columns([3, 2.3, 1.3, 1.5, 0.6])
+
+                with c1:
+                    sku_choice = st.selectbox(
+                        "Product",
+                        options=[None] + list(email_product_options.keys()),
+                        format_func=lambda s: "Select a product…" if s is None else f"{email_product_options.get(s, s)} ({s})",
+                        key=f"reorder_line_sku_{line_id}",
+                        label_visibility="collapsed",
+                    )
+
+                info = reco_lookup.get(sku_choice, {}) if sku_choice else {}
+                qty_by_basis = {
+                    "1 Week": info.get("suggested_week", 0),
+                    "1 Month": info.get("suggested_month", 0),
+                    "1 Year": info.get("suggested_year", 0),
+                }
+                unit_cost = info.get("unit_cost", 0.0) or 0.0
+
+                with c2:
+                    basis_choice = st.selectbox(
+                        "Quantity",
+                        options=[f"{b} (~{qty_by_basis[b]})" if b != "Manual" else b for b in BASIS_LABELS],
+                        key=f"reorder_line_basis_{line_id}",
+                        label_visibility="collapsed",
+                        disabled=(sku_choice is None),
+                    )
+                basis_label = basis_choice.split(" (")[0]
+
+                with c3:
+                    if basis_label == "Manual":
+                        qty = st.number_input(
+                            "Qty", min_value=0, step=1, value=0,
+                            key=f"reorder_line_manual_{line_id}",
+                            label_visibility="collapsed",
+                            disabled=(sku_choice is None),
+                        )
+                    else:
+                        qty = qty_by_basis.get(basis_label, 0)
+                        st.markdown(f"<div style='padding-top:0.5rem;'>{qty}</div>", unsafe_allow_html=True)
+
+                line_cost = (qty * unit_cost) if sku_choice else 0.0
+
+                with c4:
+                    st.markdown(f"<div style='padding-top:0.5rem;'>${line_cost:,.2f}</div>", unsafe_allow_html=True)
+
+                with c5:
+                    remove_clicked = st.button("✕", key=f"reorder_line_remove_{line_id}")
+                    if remove_clicked and len(st.session_state["reorder_email_lines"]) > 1:
+                        st.session_state["reorder_email_lines"].remove(line_id)
+                        st.rerun()
+
+                if sku_choice and qty > 0:
+                    order_rows.append({
+                        "sku": sku_choice,
+                        "name": email_product_options[sku_choice],
+                        "qty": qty,
+                        "unit_cost": unit_cost,
+                        "line_cost": line_cost,
+                        "basis": basis_label,
+                    })
+
+            if st.button("➕ Add Product"):
+                st.session_state["reorder_email_lines"].append(uuid.uuid4().hex[:8])
+                st.rerun()
+
+            total_cost = sum(r["line_cost"] for r in order_rows)
+            st.metric("Total Cost", f"${total_cost:,.2f}")
+
+            clinic_name = auth.get_clinic_name() or "our clinic"
+            profile = auth.get_profile()
+            staff_name = (profile or {}).get("full_name") or "Clinic Staff"
+            contact_first = (vendor_row.get("contact_name") or "").split(" ")[0] or "there"
+            lead_time = vendor_row.get("lead_time_days")
+
+            if order_rows:
+                product_lines = "\n".join(
+                    f"- {r['name']} (SKU: {r['sku']}) — Qty: {r['qty']} (${r['line_cost']:,.2f})"
+                    for r in order_rows
                 )
-            return f"- {name} (SKU: {sku})"
+            else:
+                product_lines = "- [add a product and quantity above]"
 
-        product_lines = "\n".join(format_product_line(s) for s in email_skus)
-        if not product_lines:
-            product_lines = "- [select one or more products above]"
+            lead_time_line = ""
+            if pd.notna(lead_time):
+                lead_time_line = f"Our standard lead time expectation is {int(lead_time)} days. "
 
-        lead_time_line = ""
-        if pd.notna(lead_time):
-            lead_time_line = f"Our standard lead time expectation is {int(lead_time)} days. "
+            subject = f"Reorder Request - {clinic_name}"
+            body = (
+                f"Hi {contact_first},\n\n"
+                f"We'd like to place a reorder with {vendor_row['vendor_name']}. "
+                f"Could you please send updated pricing and availability for the following item(s)?\n\n"
+                f"{product_lines}\n\n"
+                f"Estimated Total: ${total_cost:,.2f}\n\n"
+                f"{lead_time_line}Please let us know if any items are back-ordered.\n\n"
+                f"Thank you,\n{staff_name}\n{clinic_name}"
+            )
 
-        subject = f"Reorder Request - {clinic_name}"
-        body = (
-            f"Hi {contact_first},\n\n"
-            f"We'd like to place a reorder with {vendor_row['vendor_name']}. "
-            f"Could you please send updated pricing and availability for the following item(s)?\n\n"
-            f"{product_lines}\n\n"
-            f"{lead_time_line}Please let us know if any items are back-ordered.\n\n"
-            f"Thank you,\n{staff_name}\n{clinic_name}"
-        )
+            lines_signature = "_".join(f"{r['sku']}:{r['qty']}" for r in order_rows)
+            draft_key = f"email_draft_body_{email_vendor_id}_{lines_signature}"
+            draft_body = st.text_area(
+                "Email draft (edit as needed, then send)",
+                value=body,
+                height=240,
+                key=draft_key,
+            )
 
-        draft_key = f"email_draft_body_{email_vendor_id}_{'_'.join(sorted(email_skus))}"
-        draft_body = st.text_area(
-            "Email draft (edit as needed, then send)",
-            value=body,
-            height=220,
-            key=draft_key,
-        )
+            to_addr = vendor_row.get("contact_email") or ""
+            mailto_url = (
+                f"mailto:{urllib.parse.quote(to_addr)}"
+                f"?subject={urllib.parse.quote(subject)}"
+                f"&body={urllib.parse.quote(draft_body)}"
+            )
 
-        to_addr = vendor_row.get("contact_email") or ""
-        mailto_url = (
-            f"mailto:{urllib.parse.quote(to_addr)}"
-            f"?subject={urllib.parse.quote(subject)}"
-            f"&body={urllib.parse.quote(draft_body)}"
-        )
-
-        send_col, note_col = st.columns([1, 3])
-        with send_col:
-            st.link_button("✉️ Open in Email App", mailto_url, use_container_width=True)
-        with note_col:
-            if not to_addr:
-                st.caption("No contact email on file for this vendor — add one above to prefill the recipient.")
+            send_col, note_col = st.columns([1, 3])
+            with send_col:
+                st.link_button("✉️ Open in Email App", mailto_url, use_container_width=True)
+            with note_col:
+                if not to_addr:
+                    st.caption("No contact email on file for this vendor — add one above to prefill the recipient.")
