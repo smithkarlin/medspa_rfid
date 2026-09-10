@@ -17,6 +17,7 @@ still take an explicit clinic_id because RLS validates it, it doesn't
 invent it.
 """
 import os
+from datetime import datetime, timezone
 
 import pandas as pd
 import streamlit as st
@@ -118,9 +119,10 @@ def sync_catalog(df_clean: pd.DataFrame, clinic_id: str) -> None:
 # ---------------------------------------------------------------------
 # Tagged (RFID) inventory
 # ---------------------------------------------------------------------
-def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, location, clinic_id) -> None:
+def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, location, clinic_id,
+                        status="In Stock", used_at=None) -> None:
     try:
-        get_client().table("tagged_inventory").insert({
+        record = {
             "epc": epc,
             "clinic_id": clinic_id,
             "sku": sku,
@@ -128,11 +130,24 @@ def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, loca
             "expiration_date": str(expiration_date),
             "lot_number": lot_number,
             "location": location,
-        }).execute()
+            "status": status,
+        }
+        if used_at is not None:
+            record["used_at"] = used_at.isoformat() if hasattr(used_at, "isoformat") else str(used_at)
+        get_client().table("tagged_inventory").insert(record).execute()
     except Exception as exc:
         if _is_unique_violation(exc):
             raise DuplicateError(f"RFID tag '{epc}' is already assigned to another item.") from exc
         raise
+
+
+def mark_item_used(epc: str) -> None:
+    """Marks a tagged (RFID) item as used/consumed. This is the event that
+    powers the reorder-recommendation usage rate on the Vendors page."""
+    get_client().table("tagged_inventory").update({
+        "status": "Used",
+        "used_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("epc", epc).execute()
 
 
 def get_expected_count(location: str) -> int:
@@ -187,8 +202,9 @@ def get_all_tagged_inventory_df() -> pd.DataFrame:
         "status": "Status",
         "commissioned_at": "Commissioned At",
         "last_scanned_at": "Last Scanned At",
+        "used_at": "Used At",
     })[["RFID Tag (EPC)", "Product Name", "Storage Location", "Expiration Date",
-        "Lot Number", "Status", "Commissioned At", "Last Scanned At"]]
+        "Lot Number", "Status", "Commissioned At", "Last Scanned At", "Used At"]]
 
 
 # ---------------------------------------------------------------------
@@ -259,6 +275,69 @@ def fetch_df(table: str, columns=None) -> pd.DataFrame:
     if columns is not None:
         df = df.reindex(columns=columns)
     return df
+
+
+# ---------------------------------------------------------------------
+# Reorder recommendations
+# ---------------------------------------------------------------------
+def get_reorder_recommendations() -> pd.DataFrame:
+    """Builds a per-SKU reorder suggestion from historical usage.
+
+    Usage rate = (# items marked 'Used') / (weeks between the earliest
+    'Used' timestamp and now) for that SKU -- a simple, transparent rate
+    that gets more accurate the longer the clinic uses "Mark as Used" on
+    the Active Inventory page. Suggested quantities for a week / month /
+    year are just that weekly rate scaled up; "Reorder Now" flags any SKU
+    whose current in-stock count has already dropped to/below its catalog
+    reorder level, independent of the usage-rate calculation.
+    """
+    catalog_df = fetch_df(
+        "product_catalog",
+        columns=["sku", "product_name", "unit_cost", "reorder_level", "vendor_id"],
+    )
+    if catalog_df.empty:
+        return catalog_df.reindex(columns=[
+            "sku", "product_name", "vendor_id", "current_stock", "reorder_level",
+            "weekly_usage", "suggested_week", "suggested_month", "suggested_year", "reorder_now",
+        ])
+
+    tagged_df = fetch_df("tagged_inventory", columns=["sku", "status", "used_at"])
+
+    if not tagged_df.empty:
+        in_stock_counts = tagged_df[tagged_df["status"] == "In Stock"].groupby("sku").size()
+    else:
+        in_stock_counts = pd.Series(dtype=int)
+
+    weekly_rates = {}
+    if not tagged_df.empty:
+        used_df = tagged_df[tagged_df["status"] == "Used"].copy()
+        used_df["used_at"] = pd.to_datetime(used_df["used_at"], errors="coerce", utc=True)
+        used_df = used_df.dropna(subset=["used_at"])
+        now = pd.Timestamp.now(tz="UTC")
+        for sku, grp in used_df.groupby("sku"):
+            count = len(grp)
+            span_weeks = max((now - grp["used_at"].min()).days / 7.0, 1.0)
+            weekly_rates[sku] = count / span_weeks
+
+    rows = []
+    for _, row in catalog_df.iterrows():
+        sku = row["sku"]
+        current_stock = int(in_stock_counts.get(sku, 0))
+        weekly = weekly_rates.get(sku, 0.0)
+        reorder_level = row["reorder_level"] if pd.notna(row["reorder_level"]) else 0
+        rows.append({
+            "sku": sku,
+            "product_name": row["product_name"],
+            "vendor_id": row["vendor_id"],
+            "current_stock": current_stock,
+            "reorder_level": reorder_level,
+            "weekly_usage": round(weekly, 1),
+            "suggested_week": max(round(weekly), 0),
+            "suggested_month": max(round(weekly * (30 / 7)), 0),
+            "suggested_year": max(round(weekly * 52), 0),
+            "reorder_now": current_stock <= reorder_level,
+        })
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------
@@ -339,4 +418,27 @@ def load_sample_data(clinic_id: str) -> None:
         try:
             insert_barcode_item(row["barcode"], name, sku, exp, row["unit_cost"], loc, clinic_id)
         except Exception:
+            pass
+
+    # Backfill a bit of "Used" history so the Vendors page's reorder
+    # recommendations have real usage rates to compute right away instead
+    # of showing "not enough data yet" on a brand-new clinic.
+    now = datetime.now(timezone.utc)
+    usage_history = [
+        # sku,       used N days ago (spread out -> ~4/week for Botox)
+        ("BTX-100", 1), ("BTX-100", 3), ("BTX-100", 5), ("BTX-100", 6),
+        ("BTX-100", 8), ("BTX-100", 10), ("BTX-100", 12), ("BTX-100", 13),
+        ("JUV-UXC", 6), ("JUV-UXC", 20),
+        ("SERUM-VC", 4), ("SERUM-VC", 11), ("SERUM-VC", 18),
+    ]
+    for i, (sku, days_ago) in enumerate(usage_history):
+        row = catalog_lookup[sku]
+        used_at = now - timedelta(days=days_ago)
+        try:
+            insert_tagged_item(
+                f"DEMO-USED-{sku}-{i}", sku, row["product_name"],
+                today + timedelta(days=200), f"LOT-USED-{i}", "Treatment Room 1", clinic_id,
+                status="Used", used_at=used_at,
+            )
+        except DuplicateError:
             pass

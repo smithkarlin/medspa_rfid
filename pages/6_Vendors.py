@@ -17,6 +17,8 @@ CLINIC_ID = auth.current_clinic_id()
 
 vendors_df = db.get_vendors_df()
 catalog_df = db.fetch_df("product_catalog", columns=["sku", "product_name", "vendor_id"])
+reco_df = db.get_reorder_recommendations()
+reco_lookup = reco_df.set_index("sku").to_dict("index") if not reco_df.empty else {}
 
 # ==========================================================
 # KPI ROW
@@ -38,6 +40,51 @@ with kpi3:
     total_products = len(catalog_df)
     linked_products = int(catalog_df["vendor_id"].notna().sum()) if total_products else 0
     ui.render_kpi_card("Products Linked", f"{linked_products:,} / {total_products:,}")
+
+st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+
+# ==========================================================
+# REORDER RECOMMENDATIONS
+# ==========================================================
+with st.container(border=True):
+    st.markdown('<div class="tm-panel-title">Reorder Recommendations</div>', unsafe_allow_html=True)
+    st.caption(
+        "Suggested order quantities based on how fast each product has been used "
+        "(mark items 'Used' on the Active Inventory page to build this history)."
+    )
+
+    if reco_df.empty:
+        st.info("Add products to your catalog to see reorder recommendations.")
+    else:
+        vendor_name_lookup = dict(zip(vendors_df["id"], vendors_df["vendor_name"])) if not vendors_df.empty else {}
+        display_reco = reco_df.copy()
+        display_reco["Vendor"] = display_reco["vendor_id"].map(vendor_name_lookup).fillna("—")
+        display_reco["Status"] = display_reco.apply(
+            lambda r: "🔴 Reorder Now" if r["reorder_now"]
+            else ("⚪ No Usage History Yet" if r["weekly_usage"] == 0 else "🟢 OK"),
+            axis=1,
+        )
+        display_reco = display_reco.rename(columns={
+            "product_name": "Product",
+            "sku": "SKU",
+            "current_stock": "Current Stock",
+            "reorder_level": "Reorder Level",
+            "weekly_usage": "Avg Weekly Usage",
+            "suggested_week": "Suggested Qty (1 Week)",
+            "suggested_month": "Suggested Qty (1 Month)",
+            "suggested_year": "Suggested Qty (1 Year)",
+        })[[
+            "Status", "Product", "SKU", "Vendor", "Current Stock", "Reorder Level",
+            "Avg Weekly Usage", "Suggested Qty (1 Week)", "Suggested Qty (1 Month)", "Suggested Qty (1 Year)",
+        ]]
+
+        st.dataframe(display_reco, use_container_width=True, height=280)
+
+        if (reco_df["weekly_usage"] == 0).any():
+            st.caption(
+                "Products showing 'No Usage History Yet' don't have enough data — mark items "
+                "'Used' on the Active Inventory page as you go through stock, and these numbers will fill in."
+            )
 
 st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
@@ -178,7 +225,17 @@ with st.container(border=True):
         contact_first = (vendor_row.get("contact_name") or "").split(" ")[0] or "there"
         lead_time = vendor_row.get("lead_time_days")
 
-        product_lines = "\n".join(f"- {email_product_options[s]} (SKU: {s})" for s in email_skus)
+        def format_product_line(sku):
+            name = email_product_options[sku]
+            info = reco_lookup.get(sku)
+            if info and info["suggested_month"] > 0:
+                return (
+                    f"- {name} (SKU: {sku}) — suggested qty: {info['suggested_month']} "
+                    f"(based on ~{info['weekly_usage']}/week usage)"
+                )
+            return f"- {name} (SKU: {sku})"
+
+        product_lines = "\n".join(format_product_line(s) for s in email_skus)
         if not product_lines:
             product_lines = "- [select one or more products above]"
 

@@ -85,6 +85,7 @@ create table tagged_inventory (
     status text default 'In Stock',
     commissioned_at timestamptz default now(),
     last_scanned_at timestamptz,
+    used_at timestamptz,
     foreign key (clinic_id, sku) references product_catalog (clinic_id, sku)
 );
 
