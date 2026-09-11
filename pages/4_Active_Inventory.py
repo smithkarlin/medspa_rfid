@@ -9,12 +9,12 @@ ui.inject_base_css()
 ui.require_clinic()
 ui.render_top_bar()
 
-ui.render_page_header("📦 Active Inventory", "Live view of all commissioned RFID-tagged stock.")
+ui.render_page_header("Active Inventory", "Live view of all commissioned RFID-tagged stock.")
 
 # ==========================================================
 # ACTIVE INVENTORY VIEW
 # ==========================================================
-st.subheader("📊 Live Commissioned Stock")
+st.subheader("Live Commissioned Stock")
 
 df_inv = db.get_all_tagged_inventory_df()
 

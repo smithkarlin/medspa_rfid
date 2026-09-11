@@ -45,12 +45,12 @@ def parse_gs1_barcode(raw_barcode: str):
     return data
 
 
-ui.render_page_header("📥 Express Intake", "Scan box barcode to auto-fill product details, then scan RFID tag to complete binding.")
+ui.render_page_header("Express Intake", "Scan box barcode to auto-fill product details, then scan RFID tag to complete binding.")
 
 # ==========================================================
 # GS1 BARCODE TO RFID COMMISSIONING
 # ==========================================================
-st.subheader("⚡ Express GS1 Barcode ➔ RFID Commissioning")
+st.subheader("Express GS1 Barcode ➔ RFID Commissioning")
 st.caption("Scan box barcode to auto-fill product details, then scan RFID tag to complete binding.")
 
 if "widget_sku" not in st.session_state:

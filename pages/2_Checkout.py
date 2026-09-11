@@ -9,7 +9,7 @@ ui.inject_base_css()
 ui.require_clinic()
 ui.render_top_bar()
 
-ui.render_page_header("✅ Checkout", "Scan an RFID tag to mark a product used and remove it from active stock.")
+ui.render_page_header("Checkout", "Scan an RFID tag to mark a product used and remove it from active stock.")
 
 
 def process_checkout_scan():
@@ -34,7 +34,7 @@ def process_checkout_scan():
 # ==========================================================
 # SCAN TO CHECK OUT
 # ==========================================================
-st.subheader("📡 Scan to Check Out")
+st.subheader("Scan to Check Out")
 st.caption("Place the cursor below and scan the RFID tag on the product you just used.")
 
 st.text_input(
@@ -62,7 +62,7 @@ st.markdown("---")
 # ==========================================================
 # MANUAL CHECKOUT (no scanner handy)
 # ==========================================================
-st.subheader("🖊️ Manual Checkout")
+st.subheader("Manual Checkout")
 st.caption("No scanner on hand? Pick the item from your current in-stock list instead.")
 
 df_inv = db.get_all_tagged_inventory_df()
@@ -94,7 +94,7 @@ st.markdown("---")
 # ==========================================================
 # RECENTLY CHECKED OUT
 # ==========================================================
-st.subheader("🕒 Recently Checked Out")
+st.subheader("Recently Checked Out")
 
 used_df = df_inv[df_inv["Status"] == "Used"] if not df_inv.empty else df_inv
 if used_df.empty:

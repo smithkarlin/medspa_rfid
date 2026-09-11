@@ -11,6 +11,8 @@ the finer-grained pieces Streamlit's theme config doesn't cover -- KPI
 cards, section titles, status pills, the sidebar's active-page pill, and
 the top-right account bar.
 """
+import base64
+
 import streamlit as st
 
 INK = "#1B2340"
@@ -21,6 +23,7 @@ CARD = "#FFFFFF"
 
 BLUE_1 = "#5B9BF7"
 BLUE_2 = "#3B6FE0"
+LIGHT_BLUE = "#BEE3FF"
 GREEN = "#2FAE6E"
 AMBER = "#E8A33D"
 RED_EXPIRING = "#F0664E"
@@ -122,25 +125,63 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
 div[data-baseweb="select"] > div {{ border-radius: 10px !important; border-color: {BORDER} !important; }}
 div[data-testid="stForm"] {{ border: 1px solid {BORDER}; border-radius: 12px; padding: 1rem 1.2rem; }}
 
-/* ---- Sidebar: logo + icon-led nav, active page as a rounded blue pill ---- */
+/* ---- Sidebar brand block: icon + wordmark + clinic-name subtitle ---- */
+.tm-sidebar-brand {{
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.9rem 1rem 1.1rem 1rem;
+    margin-bottom: 0.25rem;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}}
+.tm-sidebar-brand img {{
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+    object-fit: cover;
+    flex-shrink: 0;
+}}
+.tm-sidebar-brand-text {{
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+    min-width: 0;
+}}
+.tm-sidebar-brand-name {{
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: #FFFFFF;
+}}
+.tm-sidebar-brand-sub {{
+    font-size: 0.75rem;
+    color: #9AA3B8;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+
+/* ---- Sidebar nav: every item bold, active item highlighted light blue ---- */
 [data-testid="stSidebarNav"] {{ padding-top: 0.5rem; }}
 [data-testid="stSidebarNav"] ul {{ padding-top: 0.25rem; }}
 [data-testid="stSidebarNav"] a {{
     border-radius: 10px;
     margin: 2px 0.9rem;
     padding: 0.55rem 0.9rem;
-    font-weight: 500;
     transition: background 0.15s ease;
+}}
+[data-testid="stSidebarNav"] a span {{
+    font-weight: 700 !important;
 }}
 [data-testid="stSidebarNav"] a:hover {{
     background: rgba(255,255,255,0.07);
 }}
 [data-testid="stSidebarNav"] a[aria-current="page"] {{
-    background: linear-gradient(135deg, {BLUE_1} 0%, {BLUE_2} 100%);
-    box-shadow: 0 4px 14px rgba(59,111,224,0.35);
+    background: {LIGHT_BLUE};
 }}
 [data-testid="stSidebarNav"] a[aria-current="page"] span {{
-    color: #FFFFFF !important;
+    color: {INK} !important;
     font-weight: 700 !important;
 }}
 
@@ -156,6 +197,34 @@ div[data-testid="stForm"] {{ border: 1px solid {BORDER}; border-radius: 12px; pa
 
 def inject_base_css() -> None:
     st.markdown(BASE_CSS, unsafe_allow_html=True)
+
+
+@st.cache_data
+def _icon_data_uri() -> str:
+    """Base64-encode the Tagmate icon once per process so the sidebar
+    brand block can embed it directly as an <img> without relying on
+    Streamlit's static file server."""
+    with open("assets/tagmate_icon.png", "rb") as f:
+        encoded = base64.b64encode(f.read()).decode()
+    return f"data:image/png;base64,{encoded}"
+
+
+def render_sidebar_brand(clinic_name: str = "") -> None:
+    """Custom sidebar header rendered above the auto-generated page nav:
+    the Tagmate icon, the 'Tagmate' wordmark, and a subtitle (the signed
+    -in clinic's name once known, else 'Analytics'). Replaces st.logo()
+    so the icon, wordmark, and subtitle can share one styled block."""
+    subtitle = clinic_name.strip() if clinic_name and clinic_name.strip() else "Analytics"
+    with st.sidebar:
+        st.markdown(
+            f'<div class="tm-sidebar-brand">'
+            f'<img src="{_icon_data_uri()}" alt="Tagmate" />'
+            f'<div class="tm-sidebar-brand-text">'
+            f'<span class="tm-sidebar-brand-name">Tagmate</span>'
+            f'<span class="tm-sidebar-brand-sub">{subtitle}</span>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_page_header(title: str, caption: str = "") -> None:

@@ -12,7 +12,7 @@ ui.render_top_bar()
 
 CLINIC_ID = auth.current_clinic_id()
 
-ui.render_page_header("⚙️ Catalog & Location Settings", "Manage storage locations and sync your product catalog.")
+ui.render_page_header("Catalog & Location Settings", "Manage storage locations and sync your product catalog.")
 
 with st.expander("🧪 Load Sample Data (preview the dashboards)"):
     st.caption(
@@ -31,7 +31,7 @@ st.markdown("---")
 # ==========================================================
 # STORAGE LOCATION MANAGER
 # ==========================================================
-st.subheader("📍 Storage Location Manager")
+st.subheader("Storage Location Manager")
 
 col_add_loc, col_del_loc = st.columns(2)
 
@@ -59,7 +59,7 @@ with col_del_loc:
 
 st.markdown("---")
 
-st.subheader("📤 MDware Catalog Sync")
+st.subheader("MDware Catalog Sync")
 
 MDWARE_TEMPLATE_CSV = (
     "SKU,Barcode/UPC,Product Name,Unit Cost,Reorder Level\n"

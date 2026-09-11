@@ -13,10 +13,10 @@ st.set_page_config(
     layout="wide"
 )
 
-st.logo("assets/tagmate_icon.png", size="large")
 ui.inject_base_css()
 
 if not auth.is_logged_in():
+    ui.render_sidebar_brand()
     ui.render_page_header("Tagmate", "RFID & Barcode Inventory for Medspas")
 
     login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
@@ -50,6 +50,7 @@ if not auth.is_logged_in():
     st.stop()
 
 if not auth.has_clinic():
+    ui.render_sidebar_brand()
     ui.render_page_header("Welcome to Tagmate", "One more step — let's set up your clinic.")
     with st.form("clinic_setup_form"):
         clinic_name = st.text_input("Medspa / Clinic Name")
@@ -91,6 +92,8 @@ PAGE_SPECS = [
 ]
 
 pages = {key: st.Page(path, title=title, icon=icon) for key, path, title, icon, _ in PAGE_SPECS}
+
+ui.render_sidebar_brand(auth.get_clinic_name())
 
 
 def render_home():

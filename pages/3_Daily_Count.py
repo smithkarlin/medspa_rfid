@@ -42,12 +42,12 @@ def process_rfid_scan():
     st.session_state["audit_rfid_stream"] = ""
 
 
-ui.render_page_header("📋 Daily Inventory Count", "Continuous room inventory audit via handheld RFID scanning.")
+ui.render_page_header("Daily Inventory Count", "Continuous room inventory audit via handheld RFID scanning.")
 
 # ==========================================================
 # DAILY INVENTORY COUNT (CONTINUOUS ROOM SCAN)
 # ==========================================================
-st.subheader("📋 Continuous Room Inventory Audit")
+st.subheader("Continuous Room Inventory Audit")
 st.caption("Select a room, click 'Start Room Scan', walk around scanning tags with your handheld reader, and click 'Stop & Process Scan' to reconcile.")
 
 current_locations = db.get_locations_list()
