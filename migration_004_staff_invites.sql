@@ -43,10 +43,29 @@ create unique index if not exists invites_pending_email_idx
 alter table invites enable row level security;
 
 -- ---- auth_is_admin(): the calling user's role on their own clinic ----
+-- security definer (+ locked-down search_path) on both this and the
+-- re-created auth_clinic_id() below: once a policy ON profiles calls
+-- these, a non-security-definer version would make Postgres re-evaluate
+-- that very policy to run this function's own SELECT -- infinite
+-- recursion ("stack depth limit exceeded"). Still safe: both are
+-- hardcoded to auth.uid(), so they only ever reveal the caller's own
+-- clinic_id/role, never anyone else's.
 create or replace function auth_is_admin() returns boolean
 language sql stable
+security definer
+set search_path = public
 as $$
   select coalesce((select role = 'admin' from profiles where id = auth.uid()), false)
+$$;
+
+-- Re-created here (it already exists from schema.sql) purely to add
+-- security definer -- see the comment above.
+create or replace function auth_clinic_id() returns uuid
+language sql stable
+security definer
+set search_path = public
+as $$
+  select clinic_id from profiles where id = auth.uid()
 $$;
 
 -- Admins manage invites for their own clinic only.

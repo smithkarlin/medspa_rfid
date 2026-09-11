@@ -150,16 +150,31 @@ alter table daily_audits enable row level security;
 alter table barcode_inventory enable row level security;
 
 -- Looks up the calling user's clinic_id from their profile row.
+--
+-- security definer (+ locked-down search_path) so this bypasses RLS on
+-- its own internal query. That's required, not just a hardening nicety:
+-- once a policy ON profiles itself calls this function (see the "admins
+-- read clinic roster" policy below), a non-security-definer version
+-- would make Postgres re-evaluate the very policy it's being called
+-- from in order to run its own SELECT -- infinite recursion, which
+-- Postgres reports as "stack depth limit exceeded". It's still safe:
+-- the query is hardcoded to auth.uid(), so it only ever reveals the
+-- calling user's own clinic_id, never anyone else's.
 create or replace function auth_clinic_id() returns uuid
 language sql stable
+security definer
+set search_path = public
 as $$
   select clinic_id from profiles where id = auth.uid()
 $$;
 
 -- The calling user's role on their own clinic -- used to gate the staff
--- roster and invite management to admins only.
+-- roster and invite management to admins only. security definer for the
+-- same reason as auth_clinic_id() above.
 create or replace function auth_is_admin() returns boolean
 language sql stable
+security definer
+set search_path = public
 as $$
   select coalesce((select role = 'admin' from profiles where id = auth.uid()), false)
 $$;
