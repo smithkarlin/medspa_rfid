@@ -304,6 +304,18 @@ def unassign_vendor_from_skus(skus: list) -> None:
 # ---------------------------------------------------------------------
 # Staff & invites
 # ---------------------------------------------------------------------
+def staff_invites_ready() -> bool:
+    """True once migration_004_staff_invites.sql has been applied to this
+    Supabase project. Checked with a trivial, cheap query rather than
+    assumed, so an unmigrated database shows a friendly setup message on
+    the Settings page instead of an unhandled APIError crashing it."""
+    try:
+        get_client().table("invites").select("id").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
 @with_retry
 def get_clinic_staff() -> pd.DataFrame:
     """Every profile in the caller's own clinic. Only returns rows for an

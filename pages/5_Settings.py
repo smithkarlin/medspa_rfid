@@ -138,6 +138,19 @@ st.subheader("Team")
 if not auth.is_admin():
     st.info("Only a clinic admin can manage staff and invites.")
 else:
+    try:
+        _team_section_available = db.staff_invites_ready()
+    except Exception:
+        _team_section_available = False
+
+    if not _team_section_available:
+        st.warning(
+            "Staff invites aren't set up on this database yet. Run "
+            "`migration_004_staff_invites.sql` in your Supabase SQL Editor, "
+            "then reload this page."
+        )
+        st.stop()
+
     st.caption(
         "Invite a teammate by email so they join **your** clinic when they sign up, "
         "instead of accidentally creating a brand-new one."
