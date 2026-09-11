@@ -35,9 +35,16 @@ def is_admin() -> bool:
 
 
 @with_retry
-def sign_up(email: str, password: str):
+def sign_up(email: str, password: str, metadata: dict | None = None):
+    """metadata (e.g. {"terms_accepted_at": "<iso timestamp>"}) is stored
+    on the Supabase auth user as user_metadata -- a lightweight audit
+    trail that this email accepted the Terms of Service / Privacy Policy
+    at signup, without needing a schema change."""
     client = db.get_client()
-    return client.auth.sign_up({"email": email, "password": password})
+    payload = {"email": email, "password": password}
+    if metadata:
+        payload["options"] = {"data": metadata}
+    return client.auth.sign_up(payload)
 
 
 @with_retry

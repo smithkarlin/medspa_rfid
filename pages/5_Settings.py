@@ -205,3 +205,26 @@ else:
                 "Removing a staff member's access isn't supported here yet -- "
                 "reach out if someone needs to be taken off the team."
             )
+
+st.markdown("---")
+
+# ==========================================================
+# LEGAL
+# ==========================================================
+st.subheader("Legal")
+
+legal_col1, legal_col2 = st.columns(2)
+with legal_col1:
+    with st.expander("Terms of Service"):
+        try:
+            with open("TERMS_OF_SERVICE.md", encoding="utf-8") as f:
+                st.markdown(f.read())
+        except FileNotFoundError:
+            st.caption("Terms of Service not found.")
+with legal_col2:
+    with st.expander("Privacy Policy"):
+        try:
+            with open("PRIVACY_POLICY.md", encoding="utf-8") as f:
+                st.markdown(f.read())
+        except FileNotFoundError:
+            st.caption("Privacy Policy not found.")

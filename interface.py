@@ -1,8 +1,18 @@
+from datetime import datetime, timezone
+
 import streamlit as st
 
 import auth
 import db
 import ui
+
+
+def _legal_doc_text(filename: str) -> str:
+    try:
+        with open(filename, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"_{filename} not found._"
 
 # ==========================================================
 # PAGE CONFIG (called once, here, for the whole app)
@@ -36,16 +46,31 @@ if not auth.is_logged_in():
         with st.form("signup_form"):
             signup_email = st.text_input("Email", key="signup_email")
             signup_password = st.text_input("Password", type="password", key="signup_password")
+
+            with st.expander("Read the Terms of Service"):
+                st.markdown(_legal_doc_text("TERMS_OF_SERVICE.md"))
+            with st.expander("Read the Privacy Policy"):
+                st.markdown(_legal_doc_text("PRIVACY_POLICY.md"))
+
+            agreed_to_terms = st.checkbox("I agree to the Terms of Service and Privacy Policy")
+
             if st.form_submit_button("Create Account", type="primary", use_container_width=True):
-                try:
-                    result = auth.sign_up(signup_email.strip(), signup_password)
-                    if result.session:
-                        auth.sign_in(signup_email.strip(), signup_password)
-                        st.rerun()
-                    else:
-                        st.success("Account created! Check your email to confirm it, then log in.")
-                except Exception as e:
-                    st.error(f"Sign up failed: {e}")
+                if not agreed_to_terms:
+                    st.error("Please agree to the Terms of Service and Privacy Policy to continue.")
+                else:
+                    try:
+                        terms_accepted_at = datetime.now(timezone.utc).isoformat()
+                        result = auth.sign_up(
+                            signup_email.strip(), signup_password,
+                            metadata={"terms_accepted_at": terms_accepted_at},
+                        )
+                        if result.session:
+                            auth.sign_in(signup_email.strip(), signup_password)
+                            st.rerun()
+                        else:
+                            st.success("Account created! Check your email to confirm it, then log in.")
+                    except Exception as e:
+                        st.error(f"Sign up failed: {e}")
 
     st.stop()
 
