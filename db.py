@@ -302,6 +302,58 @@ def unassign_vendor_from_skus(skus: list) -> None:
 
 
 # ---------------------------------------------------------------------
+# Staff & invites
+# ---------------------------------------------------------------------
+@with_retry
+def get_clinic_staff() -> pd.DataFrame:
+    """Every profile in the caller's own clinic. Only returns rows for an
+    admin caller -- the RLS roster policy restricts this to clinic admins,
+    a non-admin only ever sees their own row."""
+    res = (
+        get_client()
+        .table("profiles")
+        .select("id, full_name, email, role, created_at")
+        .order("created_at")
+        .execute()
+    )
+    return pd.DataFrame(res.data)
+
+
+@with_retry
+def get_pending_invites(clinic_id: str) -> pd.DataFrame:
+    res = (
+        get_client()
+        .table("invites")
+        .select("id, email, role, created_at")
+        .eq("clinic_id", clinic_id)
+        .eq("status", "pending")
+        .order("created_at")
+        .execute()
+    )
+    return pd.DataFrame(res.data)
+
+
+@with_retry
+def add_invite(clinic_id: str, email: str, role: str, invited_by: str) -> None:
+    try:
+        get_client().table("invites").insert({
+            "clinic_id": clinic_id,
+            "email": email.strip().lower(),
+            "role": role,
+            "invited_by": invited_by,
+        }).execute()
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            raise DuplicateError(f"There's already a pending invite for {email}.") from exc
+        raise
+
+
+@with_retry
+def revoke_invite(invite_id: str) -> None:
+    get_client().table("invites").update({"status": "revoked"}).eq("id", invite_id).execute()
+
+
+# ---------------------------------------------------------------------
 # Generic fetch helper (used by the Analytics and Vendors pages)
 # ---------------------------------------------------------------------
 @with_retry

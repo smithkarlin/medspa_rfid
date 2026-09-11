@@ -24,9 +24,29 @@ create table if not exists profiles (
     id uuid primary key references auth.users(id) on delete cascade,
     clinic_id uuid not null references clinics(id) on delete cascade,
     full_name text,
+    email text,
     role text not null default 'admin' check (role in ('admin', 'staff')),
     created_at timestamptz default now()
 );
+
+-- Staff invites: an admin invites a teammate by email; on that person's
+-- first login the app matches their auth email against a pending row
+-- here and joins them to this clinic instead of creating a new one.
+create table if not exists invites (
+    id uuid primary key default gen_random_uuid(),
+    clinic_id uuid not null references clinics(id) on delete cascade,
+    email text not null,
+    role text not null default 'staff' check (role in ('admin', 'staff')),
+    invited_by uuid references profiles(id) on delete set null,
+    status text not null default 'pending' check (status in ('pending', 'accepted', 'revoked')),
+    created_at timestamptz default now(),
+    accepted_at timestamptz
+);
+
+-- Only one *pending* invite per clinic+email at a time.
+create unique index if not exists invites_pending_email_idx
+    on invites (clinic_id, lower(email))
+    where status = 'pending';
 
 -- Drop old single-tenant tables from the first migration, if present.
 -- CASCADE also removes anything built on top of them (e.g. an "inventory"
@@ -121,6 +141,7 @@ create table barcode_inventory (
 
 alter table clinics enable row level security;
 alter table profiles enable row level security;
+alter table invites enable row level security;
 alter table vendors enable row level security;
 alter table product_catalog enable row level security;
 alter table locations enable row level security;
@@ -135,12 +156,25 @@ as $$
   select clinic_id from profiles where id = auth.uid()
 $$;
 
+-- The calling user's role on their own clinic -- used to gate the staff
+-- roster and invite management to admins only.
+create or replace function auth_is_admin() returns boolean
+language sql stable
+as $$
+  select coalesce((select role = 'admin' from profiles where id = auth.uid()), false)
+$$;
+
 create policy "profiles: read own row" on profiles
     for select using (id = auth.uid());
 create policy "profiles: insert own row" on profiles
     for insert with check (id = auth.uid());
 create policy "profiles: update own row" on profiles
     for update using (id = auth.uid());
+
+-- An admin can also see every profile in their own clinic (a staff
+-- roster), not just their own row.
+create policy "profiles: admins read clinic roster" on profiles
+    for select using (clinic_id = auth_clinic_id() and auth_is_admin());
 
 create policy "clinics: members can read their clinic" on clinics
     for select using (id = auth_clinic_id());
@@ -161,21 +195,107 @@ set search_path = public
 as $$
 declare
   new_clinic_id uuid;
+  user_email text;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
 
+  select email into user_email from auth.users where id = auth.uid();
+
   insert into clinics (name) values (clinic_name) returning id into new_clinic_id;
 
-  insert into profiles (id, clinic_id, full_name, role)
-  values (auth.uid(), new_clinic_id, full_name, 'admin');
+  insert into profiles (id, clinic_id, full_name, role, email)
+  values (auth.uid(), new_clinic_id, full_name, 'admin', user_email);
 
   return new_clinic_id;
 end;
 $$;
 
 grant execute on function create_clinic_and_profile(text, text) to authenticated;
+
+-- ---- Staff invites: admin-managed, plus two SECURITY DEFINER helpers ----
+-- so a brand-new invitee (no profile row yet) can look up and accept
+-- their own invite despite the roster policy above requiring one.
+
+create policy "invites: admins manage their clinic's invites" on invites
+    for all
+    using (clinic_id = auth_clinic_id() and auth_is_admin())
+    with check (clinic_id = auth_clinic_id() and auth_is_admin());
+
+create or replace function get_my_pending_invite()
+returns table(invite_id uuid, clinic_id uuid, clinic_name text, role text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  user_email text;
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+
+  select email into user_email from auth.users where id = auth.uid();
+  if user_email is null then
+    return;
+  end if;
+
+  return query
+    select i.id, i.clinic_id, c.name, i.role
+    from invites i
+    join clinics c on c.id = i.clinic_id
+    where lower(i.email) = lower(user_email) and i.status = 'pending'
+    order by i.created_at asc
+    limit 1;
+end;
+$$;
+
+grant execute on function get_my_pending_invite() to authenticated;
+
+create or replace function accept_pending_invite(full_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  invite_row invites%rowtype;
+  user_email text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if exists (select 1 from profiles where id = auth.uid()) then
+    return (select clinic_id from profiles where id = auth.uid());
+  end if;
+
+  select email into user_email from auth.users where id = auth.uid();
+  if user_email is null then
+    return null;
+  end if;
+
+  select * into invite_row
+    from invites
+    where lower(email) = lower(user_email) and status = 'pending'
+    order by created_at asc
+    limit 1;
+
+  if invite_row.id is null then
+    return null;
+  end if;
+
+  insert into profiles (id, clinic_id, full_name, role, email)
+  values (auth.uid(), invite_row.clinic_id, full_name, invite_row.role, user_email);
+
+  update invites set status = 'accepted', accepted_at = now() where id = invite_row.id;
+
+  return invite_row.clinic_id;
+end;
+$$;
+
+grant execute on function accept_pending_invite(text) to authenticated;
 
 create policy "vendors: clinic isolation" on vendors
     for all using (clinic_id = auth_clinic_id()) with check (clinic_id = auth_clinic_id());

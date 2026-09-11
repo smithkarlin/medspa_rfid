@@ -50,6 +50,21 @@ if not auth.is_logged_in():
     st.stop()
 
 if not auth.has_clinic():
+    pending_invite = auth.get_pending_invite()
+
+    if pending_invite:
+        ui.render_sidebar_brand(pending_invite["clinic_name"])
+        ui.render_page_header(
+            "You're Invited!",
+            f"Join **{pending_invite['clinic_name']}** on Tagmate as {pending_invite['role']}."
+        )
+        with st.form("accept_invite_form"):
+            invite_full_name = st.text_input("Your Name")
+            if st.form_submit_button("Join Clinic", type="primary", use_container_width=True):
+                auth.accept_invite(invite_full_name.strip())
+                st.rerun()
+        st.stop()
+
     ui.render_sidebar_brand()
     ui.render_page_header("Welcome to Tagmate", "One more step — let's set up your clinic.")
     with st.form("clinic_setup_form"):

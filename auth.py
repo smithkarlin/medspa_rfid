@@ -29,6 +29,11 @@ def has_clinic() -> bool:
     return get_profile() is not None
 
 
+def is_admin() -> bool:
+    profile = get_profile()
+    return bool(profile) and profile.get("role") == "admin"
+
+
 @with_retry
 def sign_up(email: str, password: str):
     client = db.get_client()
@@ -92,6 +97,28 @@ def create_clinic(clinic_name: str, full_name: str) -> None:
 def current_clinic_id():
     profile = get_profile()
     return profile["clinic_id"] if profile else None
+
+
+@with_retry
+def get_pending_invite():
+    """Looks up a pending invite matching the signed-in user's own auth
+    email -- used on the clinic-setup gate to offer 'join your team'
+    instead of 'create a new clinic' when someone was invited. Safe to
+    call before a profile row exists (that's the whole point)."""
+    client = db.get_client()
+    res = client.rpc("get_my_pending_invite", {}).execute()
+    return res.data[0] if res.data else None
+
+
+@with_retry
+def accept_invite(full_name: str) -> None:
+    """Joins the signed-in user to the clinic that invited them, using
+    whichever pending invite matches their auth email. No-ops safely if
+    there isn't one -- has_clinic() just stays False and the normal
+    'create a clinic' form takes over."""
+    client = db.get_client()
+    client.rpc("accept_pending_invite", {"full_name": full_name}).execute()
+    refresh_profile()
 
 
 @with_retry

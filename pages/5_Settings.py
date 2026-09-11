@@ -127,3 +127,68 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error processing CSV: {e}")
+
+st.markdown("---")
+
+# ==========================================================
+# TEAM & STAFF INVITES (admin only)
+# ==========================================================
+st.subheader("Team")
+
+if not auth.is_admin():
+    st.info("Only a clinic admin can manage staff and invites.")
+else:
+    st.caption(
+        "Invite a teammate by email so they join **your** clinic when they sign up, "
+        "instead of accidentally creating a brand-new one."
+    )
+
+    invite_col, staff_col = st.columns(2)
+
+    with invite_col:
+        st.markdown("#### Invite a Teammate")
+        with st.form("invite_staff_form", clear_on_submit=True):
+            invite_email = st.text_input("Email", placeholder="teammate@example.com")
+            invite_role = st.selectbox("Role", options=["staff", "admin"])
+            if st.form_submit_button("Send Invite", type="primary", use_container_width=True):
+                if invite_email.strip():
+                    try:
+                        db.add_invite(CLINIC_ID, invite_email.strip(), invite_role, auth.get_user().id)
+                        st.success(f"Invited {invite_email.strip()}. They'll join automatically when they sign up.")
+                        st.rerun()
+                    except db.DuplicateError as e:
+                        st.error(str(e))
+                else:
+                    st.error("Please enter an email address.")
+
+        st.markdown("#### Pending Invites")
+        pending_df = db.get_pending_invites(CLINIC_ID)
+        if pending_df.empty:
+            st.caption("No pending invites.")
+        else:
+            for _, invite_row in pending_df.iterrows():
+                inv_email_col, inv_role_col, inv_action_col = st.columns([3, 2, 2])
+                inv_email_col.write(invite_row["email"])
+                inv_role_col.caption(invite_row["role"])
+                if inv_action_col.button("Revoke", key=f"revoke_{invite_row['id']}"):
+                    db.revoke_invite(invite_row["id"])
+                    st.rerun()
+
+    with staff_col:
+        st.markdown("#### Current Staff")
+        staff_df = db.get_clinic_staff()
+        if staff_df.empty:
+            st.caption("No staff found.")
+        else:
+            display_staff = staff_df.rename(columns={
+                "full_name": "Name", "email": "Email", "role": "Role", "created_at": "Joined",
+            })
+            st.dataframe(
+                display_staff[["Name", "Email", "Role", "Joined"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "Removing a staff member's access isn't supported here yet -- "
+                "reach out if someone needs to be taken off the team."
+            )
