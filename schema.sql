@@ -95,7 +95,12 @@ create table locations (
 );
 
 create table tagged_inventory (
-    epc text primary key,
+    -- Surrogate primary key, not epc: the same physical RFID tag number
+    -- can legitimately be reused by two different clinics (generic tags
+    -- aren't globally serialized), so epc is unique per-clinic below,
+    -- not across the whole table.
+    id uuid primary key default gen_random_uuid(),
+    epc text not null,
     clinic_id uuid not null references clinics(id) on delete cascade,
     sku text not null,
     product_name text not null,
@@ -106,7 +111,8 @@ create table tagged_inventory (
     commissioned_at timestamptz default now(),
     last_scanned_at timestamptz,
     used_at timestamptz,
-    foreign key (clinic_id, sku) references product_catalog (clinic_id, sku)
+    foreign key (clinic_id, sku) references product_catalog (clinic_id, sku),
+    unique (clinic_id, epc)
 );
 
 create table daily_audits (

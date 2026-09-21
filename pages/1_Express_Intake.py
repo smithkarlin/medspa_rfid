@@ -124,6 +124,7 @@ def process_scanned_rfid():
         else:
             st.session_state.confirmed_rfid_epc = epc_val
             st.session_state.rfid_duplicate_warning = None
+            st.toast(f"✅ RFID Captured: {epc_val}")
     # else: identical to the last tag already read -- repeated trigger
     # pulls on the same tag are held/ignored instead of re-checked.
 
@@ -214,8 +215,6 @@ with col_loc:
         key="intake_location_select"
     )
 
-if st.session_state.confirmed_rfid_epc:
-    st.success(f"🟢 **RFID Captured!** Tag: `{st.session_state.confirmed_rfid_epc}`")
 if st.session_state.rfid_duplicate_warning:
     st.error(f"🚫 **Tag Already In Use:** {st.session_state.rfid_duplicate_warning}")
 
@@ -257,4 +256,4 @@ if st.button("🔗 Complete Tag Commissioning & Save to Stock", type="primary", 
             st.rerun()
 
         except db.DuplicateError:
-            st.error(f"❌ **Duplicate Tag Error:** RFID Tag `{clean_epc}` is already assigned to another item in the database!")
+            st.error(f"❌ **Duplicate Tag Error:** RFID Tag `{clean_epc}` is already assigned to another item in your clinic!")

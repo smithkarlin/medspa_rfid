@@ -166,7 +166,7 @@ def insert_tagged_item(epc, sku, product_name, expiration_date, lot_number, loca
         get_client().table("tagged_inventory").insert(record).execute()
     except Exception as exc:
         if _is_unique_violation(exc):
-            raise DuplicateError(f"RFID tag '{epc}' is already assigned to another item.") from exc
+            raise DuplicateError(f"RFID tag '{epc}' is already assigned to another item in your clinic.") from exc
         raise
 
 
