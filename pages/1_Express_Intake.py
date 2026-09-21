@@ -163,9 +163,18 @@ with col_sku:
     )
 
 with col_name:
+    # Recomputed and written into session_state on every run, before this
+    # keyed widget renders, rather than passed as value= -- a keyless (or
+    # key'd-but-value=) text_input only applies value= the first time it's
+    # ever rendered and then ignores further changes to it, which is why
+    # this was silently staying blank after a barcode match instead of
+    # tracking the selected SKU.
+    st.session_state["widget_product_name"] = (
+        catalog_options.get(selected_sku, "") if selected_sku != "CUSTOM" else ""
+    )
     st.text_input(
         "Product Name",
-        value=catalog_options.get(selected_sku, "") if selected_sku != "CUSTOM" else "",
+        key="widget_product_name",
         disabled=True,
         help="Auto-filled from the matched barcode, or from the SKU you pick above.",
     )

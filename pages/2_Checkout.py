@@ -11,24 +11,38 @@ ui.render_top_bar()
 
 ui.render_page_header("Checkout", "Scan an RFID tag to mark a product used and remove it from active stock.")
 
+if "pending_checkout" not in st.session_state:
+    st.session_state["pending_checkout"] = None
+if "checkout_result" not in st.session_state:
+    st.session_state["checkout_result"] = None
+
 
 def process_checkout_scan():
+    """Looks the tag up and, if it's a valid in-stock item, queues it for
+    the user to confirm below rather than checking it out immediately --
+    a scan alone (no separate button click) shouldn't be enough on its
+    own to remove something from stock. A not-found or already-used tag
+    is just reported; there's nothing to confirm in either case."""
     raw = st.session_state.get("checkout_scan_input", "").strip()
     if not raw:
         return
 
     epc = raw.upper()
+    # Clear the field immediately, same as Express Intake's scan fields,
+    # so a repeated trigger pull never concatenates onto old text.
+    st.session_state["checkout_scan_input"] = ""
+
     row = db.get_tagged_item(epc)
 
     if row is None:
         st.session_state["checkout_result"] = {"epc": epc, "found": False}
+        st.session_state["pending_checkout"] = None
     elif row["status"] == "Used":
         st.session_state["checkout_result"] = {"epc": epc, "found": True, "already_used": True, "row": row}
+        st.session_state["pending_checkout"] = None
     else:
-        db.mark_item_used(epc)
-        st.session_state["checkout_result"] = {"epc": epc, "found": True, "already_used": False, "row": row}
-
-    st.session_state["checkout_scan_input"] = ""
+        st.session_state["checkout_result"] = None
+        st.session_state["pending_checkout"] = {"epc": epc, "row": row}
 
 
 # ==========================================================
@@ -44,8 +58,35 @@ st.text_input(
     on_change=process_checkout_scan,
 )
 
-if "checkout_result" in st.session_state:
-    result = st.session_state["checkout_result"]
+# ==========================================================
+# CONFIRMATION -- shared by both the scan flow above and Manual
+# Checkout below. Nothing is actually checked out (no mark_item_used
+# call) until the user explicitly confirms here.
+# ==========================================================
+pending = st.session_state.get("pending_checkout")
+if pending:
+    p_row = pending["row"]
+    st.warning(
+        f"🟡 **Confirm Check-Out:** `{pending['epc']}` — **{p_row['product_name']}** "
+        f"(Lot: `{p_row['lot_number']}`) at **{p_row['location']}**. "
+        "This will remove it from active stock."
+    )
+    confirm_col, cancel_col = st.columns(2)
+    with confirm_col:
+        if st.button("✅ Confirm Check-Out", type="primary", use_container_width=True, key="confirm_checkout_btn"):
+            db.mark_item_used(pending["epc"])
+            st.session_state["checkout_result"] = {
+                "epc": pending["epc"], "found": True, "already_used": False, "row": p_row,
+            }
+            st.session_state["pending_checkout"] = None
+            st.rerun()
+    with cancel_col:
+        if st.button("✖️ Cancel", use_container_width=True, key="cancel_checkout_btn"):
+            st.session_state["pending_checkout"] = None
+            st.rerun()
+
+result = st.session_state.get("checkout_result")
+if result:
     if not result["found"]:
         st.error(f"❌ No item found for tag `{result['epc']}`. Check the scan or commission it first via Express Intake.")
     elif result["already_used"]:
@@ -84,9 +125,13 @@ else:
             label_visibility="collapsed",
         )
     with btn_col:
-        if st.button("✅ Check Out", use_container_width=True):
-            db.mark_item_used(epc_to_use)
-            st.success(f"Checked out `{epc_to_use}`.")
+        if st.button("Check Out", use_container_width=True):
+            # Queues the same confirmation panel above rather than
+            # checking out immediately -- picking from the list and
+            # clicking still gets a final "are you sure" before it's
+            # actually processed.
+            st.session_state["pending_checkout"] = {"epc": epc_to_use, "row": db.get_tagged_item(epc_to_use)}
+            st.session_state["checkout_result"] = None
             st.rerun()
 
 st.markdown("---")
