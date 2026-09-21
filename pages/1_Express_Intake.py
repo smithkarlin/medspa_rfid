@@ -61,13 +61,22 @@ if "widget_lot" not in st.session_state:
     st.session_state["widget_lot"] = ""
 if "last_scanned_barcode" not in st.session_state:
     st.session_state["last_scanned_barcode"] = ""
+if "last_scanned_rfid" not in st.session_state:
+    st.session_state["last_scanned_rfid"] = ""
+if "confirmed_rfid_epc" not in st.session_state:
+    st.session_state["confirmed_rfid_epc"] = ""
+if "rfid_duplicate_warning" not in st.session_state:
+    st.session_state["rfid_duplicate_warning"] = None
 
 catalog_options = db.get_catalog_options()
 catalog_options["CUSTOM"] = "Custom / Unlisted Product"
 
 def process_scanned_barcode():
     scanned_val = st.session_state.intake_barcode_input.strip()
-    if scanned_val and scanned_val != st.session_state.last_scanned_barcode:
+    if not scanned_val:
+        return
+
+    if scanned_val != st.session_state.last_scanned_barcode:
         st.session_state.last_scanned_barcode = scanned_val
         parsed = parse_gs1_barcode(scanned_val)
 
@@ -82,6 +91,46 @@ def process_scanned_barcode():
         if matched and matched[0] in catalog_options:
             st.session_state["widget_sku"] = matched[0]
             st.toast(f"✅ Auto-Matched Catalog: {matched[1]}")
+    # else: identical to the last scan already read -- a scanner trigger
+    # pressed repeatedly on the same barcode is held/ignored here instead
+    # of being reprocessed (re-matched, re-toasted) every time.
+
+    # Always clear the raw field right after reading it, whether this scan
+    # matched a product or was a repeat -- so the box is empty and ready
+    # for the next trigger pull instead of letting new keystrokes pile up
+    # after old, already-read text.
+    st.session_state.intake_barcode_input = ""
+
+
+def process_scanned_rfid():
+    """Same debounce-and-clear approach as process_scanned_barcode() above,
+    plus a live duplicate-tag check: an EPC already bound to another item
+    is rejected immediately (with who/where it's already assigned to)
+    instead of only failing once the whole form is submitted."""
+    epc_val = st.session_state.intake_rfid_input.strip()
+    if not epc_val:
+        return
+
+    if epc_val != st.session_state.last_scanned_rfid:
+        st.session_state.last_scanned_rfid = epc_val
+        existing = db.get_tagged_item(epc_val)
+        if existing:
+            st.session_state.confirmed_rfid_epc = ""
+            st.session_state.rfid_duplicate_warning = (
+                f"This RFID tag is already assigned to **{existing['product_name']}** "
+                f"at **{existing['location']}** (status: {existing['status']}). "
+                "Scan a different tag -- the same tag can't be bound to two items."
+            )
+        else:
+            st.session_state.confirmed_rfid_epc = epc_val
+            st.session_state.rfid_duplicate_warning = None
+    # else: identical to the last tag already read -- repeated trigger
+    # pulls on the same tag are held/ignored instead of re-checked.
+
+    # Always clear the raw field right after reading it -- see
+    # process_scanned_barcode() for why. The actual EPC to commission is
+    # kept in confirmed_rfid_epc, not in this widget's own value.
+    st.session_state.intake_rfid_input = ""
 
 raw_barcode = st.text_input(
     "1. Scan Box GS1 DataMatrix or UPC Barcode (Optional)",
@@ -138,11 +187,14 @@ st.markdown("---")
 col_rfid, col_loc = st.columns(2)
 
 with col_rfid:
-    rfid_epc = st.text_input(
+    st.text_input(
         "2. Scan Physical RFID Tag (UHF EPC Hex Code)",
         key="intake_rfid_input",
         placeholder="Wave RFID reader over tag (e.g. E200470D...)...",
-        help="Place cursor here and scan the physical RFID tag attached to the box/bottle."
+        on_change=process_scanned_rfid,
+        help="Place cursor here and scan the physical RFID tag attached to the box/bottle. "
+             "Scanning the same tag again while it's already captured won't re-read it, and "
+             "a tag already bound to another item is flagged right away."
     )
 
 with col_loc:
@@ -153,16 +205,23 @@ with col_loc:
         key="intake_location_select"
     )
 
+if st.session_state.confirmed_rfid_epc:
+    st.success(f"🟢 **RFID Captured!** Tag: `{st.session_state.confirmed_rfid_epc}`")
+if st.session_state.rfid_duplicate_warning:
+    st.error(f"🚫 **Tag Already In Use:** {st.session_state.rfid_duplicate_warning}")
+
 st.markdown("---")
 
 if st.button("🔗 Complete Tag Commissioning & Save to Stock", type="primary", use_container_width=True):
-    if not rfid_epc.strip():
+    clean_epc = st.session_state.confirmed_rfid_epc
+    if not clean_epc:
         st.error("❌ Missing RFID EPC! Please scan a physical RFID tag to complete binding.")
+    elif st.session_state.rfid_duplicate_warning:
+        st.error("❌ That RFID tag is already assigned to another item. Scan a different tag before commissioning.")
     elif selected_sku == "CUSTOM":
         st.error("❌ Please select or upload a valid product SKU before commissioning.")
     else:
         prod_name = catalog_options.get(selected_sku, "Unknown Product")
-        clean_epc = rfid_epc.strip()
 
         try:
             db.insert_tagged_item(
@@ -174,10 +233,18 @@ if st.button("🔗 Complete Tag Commissioning & Save to Stock", type="primary", 
             st.toast(f"✅ Commissioned {prod_name} to {target_location}!")
             st.success(f"🎉 **Successfully Commissioned!** Tag `{clean_epc}` bound to **{prod_name}** (Lot: `{lot_number.strip()}`, Exp: `{expiration_date}`). Saved to **{target_location}**.")
 
+            # Reset the whole form for the next item -- both the derived
+            # product fields and the raw scan state for barcode and RFID,
+            # so neither field is left showing the just-commissioned item.
             st.session_state["widget_sku"] = "CUSTOM"
             st.session_state["widget_exp"] = datetime.today().date()
             st.session_state["widget_lot"] = ""
+            st.session_state["intake_barcode_input"] = ""
             st.session_state["last_scanned_barcode"] = ""
+            st.session_state["intake_rfid_input"] = ""
+            st.session_state["last_scanned_rfid"] = ""
+            st.session_state["confirmed_rfid_epc"] = ""
+            st.session_state["rfid_duplicate_warning"] = None
             st.rerun()
 
         except db.DuplicateError:
