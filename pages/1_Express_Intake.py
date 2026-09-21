@@ -53,6 +53,24 @@ ui.render_page_header("Express Intake", "Optionally scan a box barcode to auto-f
 st.subheader("Express GS1 Barcode ➔ RFID Commissioning")
 st.caption("Scanning a barcode is optional -- it auto-fills the product, expiration, and lot below, but you can skip it and fill those in yourself.")
 
+# A successful commission sets _reset_intake_form and reruns instead of
+# writing directly to these widgets' session_state keys -- Streamlit
+# refuses that once a widget has already rendered earlier in the same
+# script run (StreamlitWidgetAlreadyInstantiatedError), which is exactly
+# what the old code did just before its own st.rerun(). Handling the
+# reset here, before any of these widgets exist for this run, avoids it.
+if st.session_state.get("_reset_intake_form"):
+    st.session_state["widget_sku"] = "CUSTOM"
+    st.session_state["widget_exp"] = datetime.today().date()
+    st.session_state["widget_lot"] = ""
+    st.session_state["intake_barcode_input"] = ""
+    st.session_state["last_scanned_barcode"] = ""
+    st.session_state["intake_rfid_input"] = ""
+    st.session_state["last_scanned_rfid"] = ""
+    st.session_state["confirmed_rfid_epc"] = ""
+    st.session_state["rfid_duplicate_warning"] = None
+    st.session_state["_reset_intake_form"] = False
+
 if "widget_sku" not in st.session_state:
     st.session_state["widget_sku"] = "CUSTOM"
 if "widget_exp" not in st.session_state:
@@ -241,18 +259,10 @@ if st.button("🔗 Complete Tag Commissioning & Save to Stock", type="primary", 
             st.toast(f"✅ Commissioned {prod_name} to {target_location}!")
             st.success(f"🎉 **Successfully Commissioned!** Tag `{clean_epc}` bound to **{prod_name}** (Lot: `{lot_number.strip()}`, Exp: `{expiration_date}`). Saved to **{target_location}**.")
 
-            # Reset the whole form for the next item -- both the derived
-            # product fields and the raw scan state for barcode and RFID,
-            # so neither field is left showing the just-commissioned item.
-            st.session_state["widget_sku"] = "CUSTOM"
-            st.session_state["widget_exp"] = datetime.today().date()
-            st.session_state["widget_lot"] = ""
-            st.session_state["intake_barcode_input"] = ""
-            st.session_state["last_scanned_barcode"] = ""
-            st.session_state["intake_rfid_input"] = ""
-            st.session_state["last_scanned_rfid"] = ""
-            st.session_state["confirmed_rfid_epc"] = ""
-            st.session_state["rfid_duplicate_warning"] = None
+            # Queue the reset for next run (see the top of this file) instead
+            # of writing to these widgets' keys directly here -- they've
+            # already rendered once in this same run, further up the page.
+            st.session_state["_reset_intake_form"] = True
             st.rerun()
 
         except db.DuplicateError:
