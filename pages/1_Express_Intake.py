@@ -45,13 +45,13 @@ def parse_gs1_barcode(raw_barcode: str):
     return data
 
 
-ui.render_page_header("Express Intake", "Scan box barcode to auto-fill product details, then scan RFID tag to complete binding.")
+ui.render_page_header("Express Intake", "Optionally scan a box barcode to auto-fill product details, then scan RFID tag to complete binding.")
 
 # ==========================================================
 # GS1 BARCODE TO RFID COMMISSIONING
 # ==========================================================
 st.subheader("Express GS1 Barcode ➔ RFID Commissioning")
-st.caption("Scan box barcode to auto-fill product details, then scan RFID tag to complete binding.")
+st.caption("Scanning a barcode is optional -- it auto-fills the product, expiration, and lot below, but you can skip it and fill those in yourself.")
 
 if "widget_sku" not in st.session_state:
     st.session_state["widget_sku"] = "CUSTOM"
@@ -84,11 +84,12 @@ def process_scanned_barcode():
             st.toast(f"✅ Auto-Matched Catalog: {matched[1]}")
 
 raw_barcode = st.text_input(
-    "1. Scan Box GS1 DataMatrix or UPC Barcode",
+    "1. Scan Box GS1 DataMatrix or UPC Barcode (Optional)",
     key="intake_barcode_input",
-    placeholder="Scan barcode here (e.g. 01003002345678901726123110LOT998822)...",
+    placeholder="Scan barcode here (e.g. 01003002345678901726123110LOT998822)... or leave blank and select the product below.",
     on_change=process_scanned_barcode,
-    help="Supports GS1 2D DataMatrix (Botox, Dysport, Juvederm) and standard UPC codes."
+    help="Optional. Supports GS1 2D DataMatrix (Botox, Dysport, Juvederm) and standard UPC codes. "
+         "Skip this and pick the product manually below if you don't have a barcode to scan."
 )
 
 if st.session_state.last_scanned_barcode:
@@ -101,7 +102,7 @@ if st.session_state.last_scanned_barcode:
 
 st.markdown("---")
 
-col_sku, col_exp, col_lot = st.columns(3)
+col_sku, col_name, col_exp, col_lot = st.columns(4)
 sku_options = list(catalog_options.keys())
 
 with col_sku:
@@ -110,6 +111,14 @@ with col_sku:
         options=sku_options,
         format_func=lambda x: catalog_options.get(x, x),
         key="widget_sku"
+    )
+
+with col_name:
+    st.text_input(
+        "Product Name",
+        value=catalog_options.get(selected_sku, "") if selected_sku != "CUSTOM" else "",
+        disabled=True,
+        help="Auto-filled from the matched barcode, or from the SKU you pick above.",
     )
 
 with col_exp:
