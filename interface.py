@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import streamlit as st
 
 import auth
+import billing
 import db
 import ui
 
@@ -24,6 +25,32 @@ st.set_page_config(
 )
 
 ui.inject_base_css()
+
+# ==========================================================
+# STRIPE CHECKOUT RETURN
+# Handled here, before the login gate -- st.link_button opens Stripe's
+# hosted checkout in a NEW browser tab, so the tab Stripe redirects back
+# to is a brand-new Streamlit session with no login state of its own,
+# regardless of whether the original tab (where "Subscribe" was clicked)
+# is still signed in. billing.handle_checkout_success() gets the clinic
+# to credit from the Stripe session itself (client_reference_id), not
+# from this session's auth state, so this works either way. See
+# billing.py's module docstring for why this app is webhook-free (pull,
+# not push) for v1.
+# ==========================================================
+checkout_flag = st.query_params.get("checkout")
+if checkout_flag == "success":
+    session_id = st.query_params.get("session_id")
+    if session_id:
+        try:
+            billing.handle_checkout_success(session_id)
+            st.toast("✅ Subscription activated! You can close this tab.")
+        except Exception as e:
+            st.error(f"Couldn't confirm your subscription with Stripe: {e}")
+    st.query_params.clear()
+elif checkout_flag == "cancel":
+    st.toast("Checkout canceled -- no charge was made.")
+    st.query_params.clear()
 
 if not auth.is_logged_in():
     ui.render_sidebar_brand()

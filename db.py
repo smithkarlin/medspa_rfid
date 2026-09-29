@@ -55,6 +55,27 @@ def get_client() -> Client:
     return st.session_state["_sb_client"]
 
 
+def get_service_client() -> Client:
+    """A Supabase client authenticated with the SERVICE ROLE key, which
+    bypasses Row Level Security entirely. This exists for exactly one
+    purpose: billing.py writing a clinic's subscription_status/Stripe IDs
+    after checking with Stripe's own API -- something no authenticated
+    clinic admin should be able to do themselves via a normal RLS-guarded
+    update (there is deliberately no UPDATE policy on clinics for that
+    reason). Never use this client for anything driven by ordinary user
+    input; only for writes gated by a real Stripe API response."""
+    if "_sb_service_client" not in st.session_state:
+        url = _get_setting("SUPABASE_URL")
+        key = _get_setting("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            raise RuntimeError(
+                "Missing SUPABASE_SERVICE_ROLE_KEY. Set it in a .env file or "
+                ".streamlit/secrets.toml (see .env.example) to enable billing."
+            )
+        st.session_state["_sb_service_client"] = create_client(url, key)
+    return st.session_state["_sb_service_client"]
+
+
 def _is_unique_violation(exc: Exception) -> bool:
     code = getattr(exc, "code", None)
     return code == "23505" or "duplicate key value" in str(exc).lower()

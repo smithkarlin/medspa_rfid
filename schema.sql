@@ -16,7 +16,17 @@ create extension if not exists pgcrypto;
 create table if not exists clinics (
     id uuid primary key default gen_random_uuid(),
     name text not null,
-    created_at timestamptz default now()
+    created_at timestamptz default now(),
+    -- Stripe billing. No UPDATE policy is granted on these (or any
+    -- column) of clinics to the authenticated role -- see the note by
+    -- the "clinics: members can read their clinic" policy below. All
+    -- writes to these columns go through the service-role client in
+    -- billing.py, driven only by what Stripe's API actually reports.
+    stripe_customer_id text,
+    stripe_subscription_id text,
+    subscription_status text,
+    subscription_plan text,
+    trial_ends_at timestamptz
 );
 
 -- One row per Supabase Auth user, linking their login to a clinic.
@@ -199,6 +209,11 @@ create policy "profiles: admins read clinic roster" on profiles
 
 create policy "clinics: members can read their clinic" on clinics
     for select using (id = auth_clinic_id());
+
+-- Deliberately no UPDATE policy on clinics for the authenticated role: an
+-- admin must never be able to set their own subscription_status to
+-- 'active' by calling the table directly. Billing writes go through
+-- db.get_service_client() (the service-role key, bypasses RLS) instead.
 
 -- Deliberately no direct INSERT policy on clinics: a brand-new user has no
 -- profile row yet, so the SELECT policy above can't see a clinic they just

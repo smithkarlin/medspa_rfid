@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 import auth
+import billing
 import db
 import ui
 
@@ -205,6 +206,62 @@ else:
                 "Removing a staff member's access isn't supported here yet -- "
                 "reach out if someone needs to be taken off the team."
             )
+
+st.markdown("---")
+
+# ==========================================================
+# BILLING (admin only)
+# ==========================================================
+st.subheader("Billing")
+
+if not auth.is_admin():
+    st.info("Only a clinic admin can manage billing.")
+else:
+    try:
+        billing_info = billing.sync_subscription_status(CLINIC_ID)
+        billing_error = None
+    except Exception as e:
+        billing_info = {}
+        billing_error = str(e)
+
+    if billing_error:
+        st.warning(f"Couldn't check billing status right now: {billing_error}")
+    else:
+        status = billing_info.get("subscription_status")
+        status_display = {
+            "trialing": "🟡 Free Trial",
+            "active": "🟢 Active",
+            "past_due": "🔴 Payment Past Due",
+            "canceled": "⚪ Canceled",
+            "incomplete": "🟡 Incomplete",
+            "incomplete_expired": "⚪ Expired",
+            "unpaid": "🔴 Unpaid",
+        }
+        st.write(f"**Status:** {status_display.get(status, status or 'No subscription yet')}")
+        if status == "trialing" and billing_info.get("trial_ends_at"):
+            st.caption(f"Trial ends {billing_info['trial_ends_at'][:10]}.")
+        st.caption(
+            "Billing status is shown here for tracking. Nothing in the app is "
+            "currently restricted based on it."
+        )
+
+        if billing_info.get("stripe_customer_id"):
+            if st.button("Manage Billing"):
+                try:
+                    portal_url = billing.create_billing_portal_session(CLINIC_ID)
+                    st.link_button("Open Stripe Billing Portal ↗", portal_url)
+                except Exception as e:
+                    st.error(f"Couldn't open the billing portal: {e}")
+        else:
+            if st.button("Subscribe", type="primary"):
+                try:
+                    clinic_name = auth.get_clinic_name() or "Your Clinic"
+                    user = auth.get_user()
+                    customer_email = user.email if user else ""
+                    checkout_url = billing.create_checkout_session(CLINIC_ID, clinic_name, customer_email)
+                    st.link_button("Continue to Stripe Checkout ↗", checkout_url)
+                except Exception as e:
+                    st.error(f"Couldn't start checkout: {e}")
 
 st.markdown("---")
 
