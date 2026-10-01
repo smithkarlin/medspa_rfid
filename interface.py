@@ -79,16 +79,14 @@ if not auth.is_logged_in():
 
             with st.form("complete_reset_form"):
                 st.caption("Step 2: Enter the code from that email and your new password.")
-                complete_email = st.text_input(
-                    "Email",
-                    key="reset_complete_email",
-                    value=st.session_state.get("reset_email_sent_to", ""),
-                )
                 reset_code = st.text_input("Reset Code (from the email)", key="reset_code")
                 new_password = st.text_input("New Password", type="password", key="reset_new_password")
                 confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
                 if st.form_submit_button("Reset Password", type="primary", use_container_width=True):
-                    if not reset_code.strip():
+                    complete_email = st.session_state.get("reset_email_sent_to", "")
+                    if not complete_email:
+                        st.error("Enter your email in Step 1 first and send yourself a code.")
+                    elif not reset_code.strip():
                         st.error("Enter the reset code from your email.")
                     elif new_password != confirm_password:
                         st.error("Passwords don't match.")
@@ -96,7 +94,7 @@ if not auth.is_logged_in():
                         st.error("Password must be at least 6 characters.")
                     else:
                         try:
-                            auth.reset_password_with_code(complete_email.strip(), reset_code.strip(), new_password)
+                            auth.reset_password_with_code(complete_email, reset_code.strip(), new_password)
                             st.success("Password updated! Click \"Back to Log In\" and sign in with your new password.")
                             st.session_state.pop("reset_email_sent_to", None)
                         except Exception as e:
