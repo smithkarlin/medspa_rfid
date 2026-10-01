@@ -3,9 +3,9 @@
 **Effective Date:** September 11, 2026
 
 **Before you use this document:** like the Terms of Service, this is a
-tailored starting draft, not a finished legal document — have an attorney
-review it before relying on it, and fill in the same bracketed placeholders
-(`[Your Legal Business Name]`, `[Your State]`, `[Support Email]`).
+tailored starting draft, not a finished legal document -- have an attorney
+in Arizona review it before relying on it. The business name and support
+email are filled in as Tagmate Analytics and info@tagmateanalytics.com.
 
 If your customer base expands to the EU/UK or California, this policy will
 need additional sections (GDPR legal bases and data-subject rights, or
@@ -101,7 +101,7 @@ not enter any patient-identifying information into it (see Section 2 of the
 Terms of Service). We don't collect, and don't want to collect, protected
 health information about your patients. If information about an individual
 patient ever ends up in the Service despite this policy, contact us at
-`[Support Email]` so we can help you remove it.
+`info@tagmateanalytics.com` so we can help you remove it.
 
 ## 7. Data Retention
 
@@ -109,7 +109,7 @@ We retain your account and inventory data for as long as your account is
 active. If your account is terminated, we retain your data for a limited
 period (currently planned as 30 days) to allow for export or reactivation,
 after which we may delete it. You can request deletion sooner, or an export
-of your data, by contacting `[Support Email]`.
+of your data, by contacting `info@tagmateanalytics.com`.
 
 ## 8. Your Choices and Rights
 
@@ -117,7 +117,7 @@ You can access and update most of your account information directly within
 the Service. You can request a copy of your clinic's data, or request
 deletion of your account and its data (subject to Section 7 and any
 legitimate business or legal need to retain certain records), by contacting
-`[Support Email]`.
+`info@tagmateanalytics.com`.
 
 If you're located somewhere with specific statutory privacy rights (for
 example, the EU/UK or California), you may have additional rights — contact
@@ -146,4 +146,4 @@ effect.
 ## 12. Contact
 
 Questions about this Privacy Policy, or a request regarding your data?
-Contact us at `[Support Email]`.
+Contact us at `info@tagmateanalytics.com`.

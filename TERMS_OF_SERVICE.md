@@ -3,24 +3,21 @@
 **Effective Date:** September 11, 2026
 
 **Before you use this document:** This is a starting draft, not a finished legal
-contract. A few fields below are bracketed placeholders — fill them in, and have
-a licensed attorney in your state review the whole document before you rely on
-it with real, paying customers. Items you need to fill in:
-
-- `[Your Legal Business Name]` — your LLC/corporation name once formed (using
-  your own name as a sole proprietor is fine to start, but an LLC is strongly
-  recommended once you're taking payment from other businesses).
-- `[Your State]` — the state whose law governs this agreement and where disputes
-  are resolved (usually wherever your business is legally based).
-- `[Support Email]` — a dedicated support address (e.g. support@tagmateanalytics.com)
-  rather than a personal inbox, once you have one.
+contract -- have a licensed attorney in Arizona review the whole document before
+you rely on it with real, paying customers. The business name, governing state,
+and support email are filled in as Tagmate Analytics, Arizona, and
+info@tagmateanalytics.com. One thing worth confirming with that attorney:
+whether Tagmate Analytics is operating as a sole proprietorship or a formed
+LLC/corporation -- an LLC is strongly recommended once you're taking payment
+from other businesses, since it gives you personal liability protection a
+sole proprietorship doesn't.
 
 ---
 
 ## 1. Agreement to Terms
 
 These Terms of Service ("**Terms**") are a binding agreement between
-`[Your Legal Business Name]` ("**Tagmate Analytics**," "**we**," "**us**") and
+`Tagmate Analytics` ("**Tagmate Analytics**," "**we**," "**us**") and
 the medical spa, clinic, or other business ("**Customer**," "**you**") that
 creates an account to use our RFID and barcode inventory management platform
 (the "**Service**"). By creating an account, inviting staff, or otherwise using
@@ -61,7 +58,7 @@ Clinic with the role the Admin assigns them.
 - Admins are responsible for who they invite and what role (Admin or staff)
   they grant — an Admin can see and manage everything in the Clinic,
   including inviting or (in the future) removing other staff.
-- You must notify us promptly at `[Support Email]` if you suspect
+- You must notify us promptly at `info@tagmateanalytics.com` if you suspect
   unauthorized access to your account.
 - You must be lawfully authorized to act on behalf of the business you
   register, and old enough to enter into a binding contract in your
@@ -103,7 +100,7 @@ your staff enters.
 When your account is terminated, we'll retain Your Data for a reasonable
 period (currently planned as 30 days) to allow for export or reactivation,
 after which we may delete it. You can request an export or earlier deletion
-at any time by contacting `[Support Email]`.
+at any time by contacting `info@tagmateanalytics.com`.
 
 ## 6. Fees and Billing
 
@@ -150,7 +147,7 @@ you're using the Service free of charge).
 
 Nothing in this section limits liability where the law doesn't allow it to be
 limited (for example, liability for our own gross negligence or willful
-misconduct, where applicable under `[Your State]` law).
+misconduct, where applicable under `Arizona` law).
 
 ## 10. Indemnification
 
@@ -164,7 +161,7 @@ Section 2.
 
 These Terms remain in effect while you have an active account. You may
 cancel at any time from within the Service or by contacting
-`[Support Email]`. We may suspend or terminate your account for a material
+`info@tagmateanalytics.com`. We may suspend or terminate your account for a material
 breach of these Terms that isn't fixed within 10 days of notice, or
 immediately for serious violations (e.g., a security threat to other
 Clinics). Sections 5 (as to data retention), 7, 8, 9, 10, and 13 survive
@@ -179,9 +176,9 @@ Terms.
 
 ## 13. Governing Law and Disputes
 
-These Terms are governed by the laws of `[Your State]`, without regard to its
+These Terms are governed by the laws of `Arizona`, without regard to its
 conflict-of-laws rules. Any dispute arising out of these Terms will be
-resolved in the state or federal courts located in `[Your State]`, and both
+resolved in the state or federal courts located in `Arizona`, and both
 parties consent to that venue.
 
 ## 14. Miscellaneous
@@ -195,4 +192,4 @@ waiver of it.
 
 ## 15. Contact
 
-Questions about these Terms? Contact us at `[Support Email]`.
+Questions about these Terms? Contact us at `info@tagmateanalytics.com`.
