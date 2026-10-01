@@ -59,15 +59,67 @@ if not auth.is_logged_in():
     login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
 
     with login_tab:
-        with st.form("login_form"):
-            login_email = st.text_input("Email", key="login_email")
-            login_password = st.text_input("Password", type="password", key="login_password")
-            if st.form_submit_button("Log In", type="primary", use_container_width=True):
-                try:
-                    auth.sign_in(login_email.strip(), login_password)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Login failed: {e}")
+        if st.session_state.get("show_password_reset"):
+            st.subheader("Reset Your Password")
+
+            with st.form("request_reset_form"):
+                st.caption("Step 1: Enter your email to get a reset code.")
+                reset_email = st.text_input(
+                    "Email",
+                    key="reset_request_email",
+                    value=st.session_state.get("reset_email_sent_to", ""),
+                )
+                if st.form_submit_button("Send Reset Code", use_container_width=True):
+                    try:
+                        auth.send_password_reset(reset_email.strip())
+                        st.session_state["reset_email_sent_to"] = reset_email.strip()
+                        st.success("If that email has an account, a reset code is on its way -- check your inbox.")
+                    except Exception as e:
+                        st.error(f"Couldn't send reset email: {e}")
+
+            with st.form("complete_reset_form"):
+                st.caption("Step 2: Enter the code from that email and your new password.")
+                complete_email = st.text_input(
+                    "Email",
+                    key="reset_complete_email",
+                    value=st.session_state.get("reset_email_sent_to", ""),
+                )
+                reset_code = st.text_input("Reset Code (from the email)", key="reset_code")
+                new_password = st.text_input("New Password", type="password", key="reset_new_password")
+                confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
+                if st.form_submit_button("Reset Password", type="primary", use_container_width=True):
+                    if not reset_code.strip():
+                        st.error("Enter the reset code from your email.")
+                    elif new_password != confirm_password:
+                        st.error("Passwords don't match.")
+                    elif len(new_password) < 6:
+                        st.error("Password must be at least 6 characters.")
+                    else:
+                        try:
+                            auth.reset_password_with_code(complete_email.strip(), reset_code.strip(), new_password)
+                            st.success("Password updated! Click \"Back to Log In\" and sign in with your new password.")
+                            st.session_state.pop("reset_email_sent_to", None)
+                        except Exception as e:
+                            st.error(f"Couldn't reset password: {e}")
+
+            if st.button("← Back to Log In"):
+                st.session_state["show_password_reset"] = False
+                st.rerun()
+
+        else:
+            with st.form("login_form"):
+                login_email = st.text_input("Email", key="login_email")
+                login_password = st.text_input("Password", type="password", key="login_password")
+                if st.form_submit_button("Log In", type="primary", use_container_width=True):
+                    try:
+                        auth.sign_in(login_email.strip(), login_password)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Login failed: {e}")
+
+            if st.button("Forgot your password?"):
+                st.session_state["show_password_reset"] = True
+                st.rerun()
 
     with signup_tab:
         with st.form("signup_form"):

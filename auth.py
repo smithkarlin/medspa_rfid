@@ -136,3 +136,49 @@ def get_clinic_name():
     client = db.get_client()
     res = client.table("clinics").select("name").eq("id", clinic_id).limit(1).execute()
     return res.data[0]["name"] if res.data else None
+
+
+@with_retry
+def send_password_reset(email: str) -> None:
+    """Kicks off Supabase's password-recovery flow for the given email.
+
+    Deliberately uses a throwaway client (create_client directly) instead
+    of db.get_client() -- this runs from the logged-out login screen, so
+    there's no real session to reuse, and a fresh client means this can't
+    accidentally interact with whatever client state a concurrent sign_in
+    attempt on the same browser session might be touching.
+
+    Supabase's default "Reset Password" email template only includes a
+    clickable link ({{ .ConfirmationURL }}), whose recovery token arrives
+    in the URL *fragment* (#access_token=...) -- something a server-side
+    app like this one never sees, since browsers don't send fragments to
+    the server. So the email template needs {{ .Token }} added to it
+    (Supabase Dashboard -> Authentication -> Email Templates -> Reset
+    Password) to also include a 6-digit code the user can type into
+    reset_password_with_code() below instead of clicking the link.
+    """
+    from supabase import create_client
+    url = db._get_setting("SUPABASE_URL")
+    key = db._get_setting("SUPABASE_KEY")
+    client = create_client(url, key)
+    client.auth.reset_password_for_email(email)
+
+
+@with_retry
+def reset_password_with_code(email: str, code: str, new_password: str) -> None:
+    """Completes a password reset: exchanges the 6-digit code Supabase
+    emailed (via send_password_reset above) for a one-time recovery
+    session, then sets the new password under that session.
+
+    Uses its own throwaway client for the same reason send_password_reset
+    does -- this runs from the logged-out screen, so there's no existing
+    session to protect, but keeping it isolated also means an abandoned
+    or failed reset attempt can never leak a stray recovery session into
+    whatever client a later real sign_in() call ends up using.
+    """
+    from supabase import create_client
+    url = db._get_setting("SUPABASE_URL")
+    key = db._get_setting("SUPABASE_KEY")
+    client = create_client(url, key)
+    client.auth.verify_otp({"email": email, "token": code, "type": "recovery"})
+    client.auth.update_user({"password": new_password})
